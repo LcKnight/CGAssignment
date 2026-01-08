@@ -19,8 +19,12 @@ cmake --build build/windows-ninja-release
 - `./VulkanApp model.obj 2`:  BVH+Scanline-ZBuffer 
 - `./VulkanApp model.obj 3`:  HZB + BVH 遮挡剔除
 鼠标滚轮缩放，鼠标左键按住旋转，按q切换旋转轴。
+
 请确保./目录下有两个spv文件和你的obj文件，因为代码是这样写的 bro，后面再改了。
+
 python是一个很简单的benchmark 后面再改了
+
 最终结果来看在100k面片层级来说 bvh和hzb的开销远远大于他们带来的性能提升
+
 但是我在开启了Openmp之后，效果就有了比较显著的不同
 `bool benchmarkMode = false;`benchmarkMode用来启停是否是跑分模式，跑分模式会跑固定的帧数
