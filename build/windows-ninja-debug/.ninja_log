@@ -1,8 +1,0 @@
-# ninja log v6
-2	81	7894894066757740	vert.spv	58ab8e26fd6b7a04
-3	79	7894894066737643	C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-debug/frag.spv	86fd6c70d8ea3f0f
-81	579	7894894066824389	CMakeFiles/VulkanApp.dir/src/main.cpp.obj	25afd8698824620d
-2	81	7894894066757740	C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-debug/vert.spv	58ab8e26fd6b7a04
-579	687	7894894071795712	VulkanApp.exe	bbf13e73b87c7bf1
-1	6	7894894064699479	clean	d5e0b4afc9293b49
-3	79	7894894066737643	frag.spv	86fd6c70d8ea3f0f

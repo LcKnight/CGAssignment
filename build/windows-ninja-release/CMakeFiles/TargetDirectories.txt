@@ -1,6 +1,0 @@
-C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-release/CMakeFiles/Compile_vert.spv.dir
-C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-release/CMakeFiles/Shaders.dir
-C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-release/CMakeFiles/Compile_frag.spv.dir
-C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-release/CMakeFiles/VulkanApp.dir
-C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-release/CMakeFiles/edit_cache.dir
-C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-release/CMakeFiles/rebuild_cache.dir
