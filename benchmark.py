@@ -1,97 +1,112 @@
 import subprocess
 import re
-import sys
 import os
+import matplotlib.pyplot as plt
 
 # --- 配置 ---
 EXE_PATH = "VulkanApp.exe"
-MODEL_PATH = "./city.obj" # 请根据你的实际 obj 路径修改这里！
+MODEL_PATH = "./house_t.obj"  # 请确保这里是你的高面数模型路径
+IS_EXTREME = True
 MODES = {
     1: "Standard Z-Buffer",
     2: "Scanline Z-Buffer",
-    3: "Hierarchical Z-Buffer (HZB + BVH)"
+    3: "Hierarchical Z-Buffer"
 }
 
 def run_test(mode):
-    print(f"正在测试模式 {mode}: {MODES[mode]} ...", end="", flush=True)
+    mode_name = MODES[mode]
+    if IS_EXTREME:
+        mode_name += " (Extreme)"
+    print(f"Running {mode_name} ... ", end="", flush=True)
     
+    # [修改] 构建命令，如果有 IS_EXTREME 则追加参数
     cmd = [EXE_PATH, MODEL_PATH, str(mode)]
+    if IS_EXTREME:
+        cmd.append("extreme")
+    
+    # 存储结果: [(frame_id, fps), ...]
+    data_points = []
     
     try:
-        # 运行程序并捕获输出
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30) # 30秒超时防止卡死
-        output = result.stdout
+        # 启动进程，实时读取输出
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         
-        # 使用正则提取 C++ 打印的 "BENCHMARK_RESULT: ... FPS=xxx"
-        match = re.search(r"FPS=([\d\.]+)", output)
-        if match:
-            fps = float(match.group(1))
-            print(f" 完成. FPS: {fps:.2f}")
-            return fps
-        else:
-            print(" 失败. 未找到性能数据。")
-            print("程序输出片段:", output[-200:]) # 打印最后200字符用于调试
-            return None
-            
-    except subprocess.TimeoutExpired:
-        print(" 超时! 程序可能卡死了。")
-        return None
+        while True:
+            line = process.stdout.readline()
+            if not line:
+                break
+                
+            line = line.strip()
+            # 匹配格式: BENCH_DATA,frame,ms
+            if line.startswith("BENCH_DATA"):
+                parts = line.split(',')
+                if len(parts) == 3:
+                    frame_id = int(parts[1])
+                    frame_time_ms = float(parts[2])
+                    
+                    # 过滤掉前 10 帧的不稳定数据
+                    if frame_id > 10:
+                        fps = 1000.0 / frame_time_ms if frame_time_ms > 0 else 0
+                        data_points.append((frame_id, fps))
+                        
+            elif line == "BENCHMARK_DONE":
+                break
+        
+        process.wait()
+        print(f"Done. Captured {len(data_points)} frames.")
+        return data_points
+        
     except Exception as e:
-        print(f" 出错: {e}")
-        return None
+        print(f"Error: {e}")
+        return []
 
 def main():
     if not os.path.exists(EXE_PATH):
-        print(f"错误: 找不到 {EXE_PATH}，请确保脚本在 build/release 目录下运行。")
+        print(f"Error: Executable {EXE_PATH} not found.")
         return
 
-    results = {}
-    
-    print("="*60)
-    print(f"开始性能测试 - 模型: {MODEL_PATH}")
-    print("="*60)
+    all_results = {}
 
-    # 依次运行三种模式
+    # 1. 运行所有模式
     for mode in [1, 2, 3]:
-        fps = run_test(mode)
-        if fps is not None:
-            results[mode] = fps
-        else:
-            results[mode] = 0.0
+        data = run_test(mode)
+        all_results[mode] = data
 
-    # --- 生成报告 ---
-    print("\n" + "="*60)
-    print(f"{'算法模式':<35} | {'FPS':<10} | {'相对加速比 (vs 模式1)':<15}")
-    print("-" * 65)
-    
-    base_fps = results.get(1, 1.0) # 避免除以0
+    # 2. 绘图
+    plt.figure(figsize=(12, 6))
     
     for mode in [1, 2, 3]:
-        fps = results.get(mode, 0.0)
-        name = MODES[mode]
+        data = all_results[mode]
+        if not data:
+            continue
+            
+        frames = [d[0] for d in data]
+        fps_list = [d[1] for d in data]
         
-        if mode == 1:
-            ratio = "1.00x (基准)"
-        else:
-            if base_fps > 0:
-                r = fps / base_fps
-                ratio = f"{r:.2f}x"
-            else:
-                ratio = "N/A"
+        # 平滑曲线 (可选，Moving Average)
+        # fps_list = [sum(fps_list[i:i+5])/5 for i in range(len(fps_list)-5)]
+        # frames = frames[:-5]
         
-        print(f"{name:<35} | {fps:<10.2f} | {ratio:<15}")
-    print("="*60)
+        plt.plot(frames, fps_list, label=f"Mode {mode}: {MODES[mode]}")
 
-    # --- 自动分析 ---
-    print("\n【性能分析结论】")
-    if results[3] > results[1]:
-        print(f"1. HZB (完整模式) 相比简单模式带来了 {results[3]/results[1]:.1f} 倍的性能提升。")
-        print("   原因: BVH 层次包围盒有效地剔除了大量被遮挡的几何体，")
-        print("         避免了对不可见三角形进行昂贵的光栅化和着色计算。")
-    else:
-        print("1. HZB 模式没有带来明显的性能提升，甚至可能更慢。")
-        print("   可能原因: 场景过于简单(遮挡少)，或者物体都挤在屏幕前方，")
-        print("   导致 BVH 构建和遍历的开销超过了剔除带来的收益。")
+    plt.xlabel("Frame Index (Camera Path: Zoom Out -> Rotate -> Zoom In)")
+    plt.ylabel("FPS")
+    plt.title(f"Performance Analysis: {MODEL_PATH}")
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # 保存图片
+    chart_filename = "benchmark_chart.png"
+    plt.savefig(chart_filename, dpi=150)
+    print(f"\nChart saved to {chart_filename}")
+    
+    # 3. 简要统计
+    print("\n--- Summary ---")
+    for mode in [1, 2, 3]:
+        data = all_results[mode]
+        if data:
+            avg_fps = sum(d[1] for d in data) / len(data)
+            print(f"{MODES[mode]}: Avg FPS = {avg_fps:.2f}")
 
 if __name__ == "__main__":
     main()

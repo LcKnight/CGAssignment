@@ -309,12 +309,16 @@ static std::vector<char> readFile(const std::string &filename) {
 class HelloVulkanApplication
 {
 public:
-    void run(const char *objFilename, int mode) {
+    void run(const char *objFilename, int mode, bool extreme) {
         g_renderMode = mode;
-        std::cout << "Starting with Render Mode: " << g_renderMode << std::endl;
-        std::cout << "1: Standard Z-Buffer | 2: Scanline Z-Buffer | 3: Hierarchy Z-Buffer" << std::endl;
+        benchmarkExtremeMode = extreme;
+        std::cout << "Starting Render Mode: " << g_renderMode;
+        if (benchmarkExtremeMode) std::cout << " (EXTREME MODE: 10x Instances)";
+        std::cout << std::endl;
+
         if (objFilename) g_mesh = Mesh::loadObj(objFilename);
         else g_mesh = Mesh::loadObj("dummy.obj");
+        
         initWindow();
         initVulkan();
         startTime = std::chrono::high_resolution_clock::now();
@@ -358,9 +362,10 @@ private:
     bool framebufferResized = false;
     float lastFrameTime = 0.0f;
 
-    bool benchmarkMode = false;         
+    bool benchmarkMode = true;         
+    bool benchmarkExtremeMode = true;
     int benchmarkFrameCount = 0;       
-    const int TOTAL_TEST_FRAMES = 500; 
+    const int TOTAL_TEST_FRAMES = 1200; 
     std::chrono::high_resolution_clock::time_point startTime;
 
     std::vector<std::vector<float>> hzb;
@@ -492,354 +497,223 @@ private:
         return true;
     }
 
+    // [修复版] 更加稳定的扫描线光栅化
     void scanlineRasterizeTri(Vec3 v0, Vec3 v1, Vec3 v2, uint8_t r, uint8_t g, uint8_t b) {
+        // 1. 按 Y 排序 (v0.y <= v1.y <= v2.y)
         if (v0.y > v1.y) std::swap(v0, v1);
         if (v0.y > v2.y) std::swap(v0, v2);
         if (v1.y > v2.y) std::swap(v1, v2);
-        struct Edge { float x, dx, z, dz; };
-        auto initEdge = [](const Vec3& start, const Vec3& end) -> Edge {
-            Edge e; e.x = start.x; e.z = start.z;
-            float dy = end.y - start.y;
-            if (dy > 0) { e.dx = (end.x - start.x) / dy; e.dz = (end.z - start.z) / dy; } else { e.dx = 0; e.dz = 0; }
-            return e;
-        };
-        int totalHeight = (int)(v2.y - v0.y);
-        if (totalHeight == 0) return;
-        auto drawSpan = [&](int y, float xStart, float xEnd, float zStart, float zEnd) {
-            if (y < 0 || y >= HEIGHT) return;
-            if (xStart > xEnd) { std::swap(xStart, xEnd); std::swap(zStart, zEnd); }
-            int iXStart = (int)xStart; int iXEnd = (int)xEnd;
-            float width = xEnd - xStart; float dzStep = (width > 0) ? (zEnd - zStart) / width : 0;
-            float currentZ = zStart;
-            int startX = std::max(0, iXStart); int endX = std::min((int)WIDTH - 1, iXEnd);
-            if (startX > iXStart) currentZ += (startX - iXStart) * dzStep;
-            for (int x = startX; x <= endX; x++) {
+
+        // 2. 整数化 Y 范围 (向下取整/向上取整，保证覆盖像素中心)
+        // 这里的 +0.5f 是为了取像素中心
+        int yStart = (int)std::ceil(v0.y - 0.5f);
+        int yEnd   = (int)std::ceil(v2.y - 0.5f);
+
+        // 屏幕裁剪 Y
+        yStart = std::max(0, yStart);
+        yEnd   = std::min((int)HEIGHT, yEnd);
+
+        if (yStart >= yEnd) return;
+
+        // 3. 计算长边 (v0 -> v2) 的相关增量
+        float longDy = v2.y - v0.y;
+        if (longDy == 0.0f) return;
+
+        // 4. 逐行扫描
+        for (int y = yStart; y < yEnd; y++) {
+            // 当前扫描线 Y 的像素中心
+            float pixelY = (float)y + 0.5f;
+
+            // --- 计算长边 (Left or Right) ---
+            // tLong 是当前 Y 在 v0-v2 线段上的比例 (0.0 ~ 1.0)
+            float tLong = (pixelY - v0.y) / longDy;
+            float xLong = v0.x + (v2.x - v0.x) * tLong;
+            float zLong = v0.z + (v2.z - v0.z) * tLong;
+
+            // --- 计算短边 (v0-v1 或 v1-v2) ---
+            float xShort, zShort;
+            
+            if (pixelY < v1.y) {
+                // 上半部分: v0 -> v1
+                float dy1 = v1.y - v0.y;
+                if (dy1 == 0.0f) continue;
+                float t1 = (pixelY - v0.y) / dy1;
+                xShort = v0.x + (v1.x - v0.x) * t1;
+                zShort = v0.z + (v1.z - v0.z) * t1;
+            } else {
+                // 下半部分: v1 -> v2
+                float dy2 = v2.y - v1.y;
+                if (dy2 == 0.0f) continue;
+                float t2 = (pixelY - v1.y) / dy2;
+                xShort = v1.x + (v2.x - v1.x) * t2;
+                zShort = v1.z + (v2.z - v1.z) * t2;
+            }
+
+            // 5. 确定当前行的 X 起止
+            float xStart = xLong;
+            float xEnd   = xShort;
+            float zStart = zLong;
+            float zEnd   = zShort;
+
+            // 确保 xStart < xEnd
+            if (xStart > xEnd) {
+                std::swap(xStart, xEnd);
+                std::swap(zStart, zEnd);
+            }
+
+            // 6. X 轴裁剪与绘制
+            int ixStart = (int)std::ceil(xStart - 0.5f);
+            int ixEnd   = (int)std::ceil(xEnd - 0.5f);
+
+            ixStart = std::max(0, ixStart);
+            ixEnd   = std::min((int)WIDTH, ixEnd);
+
+            float spanWidth = xEnd - xStart;
+            // 避免除以零
+            if (spanWidth <= 0.0f) continue;
+
+            float dzPerPixel = (zEnd - zStart) / spanWidth;
+
+            // 优化：直接计算起始 Z，而不是从 zStart 累加，减少 X 轴裁剪误差
+            // 算出 ixStart 这个像素中心相对于 xStart 的偏移量
+            float xPreStep = (float)ixStart + 0.5f - xStart;
+            float currentZ = zStart + xPreStep * dzPerPixel;
+
+            for (int x = ixStart; x < ixEnd; x++) {
                 int idx = y * WIDTH + x;
+                // Z-Test
                 if (currentZ < zBuffer[idx]) {
                     zBuffer[idx] = currentZ;
                     int pIdx = idx * 4;
-                    pixels[pIdx + 0] = r; pixels[pIdx + 1] = g; pixels[pIdx + 2] = b; pixels[pIdx + 3] = 255;
+                    pixels[pIdx + 0] = r;
+                    pixels[pIdx + 1] = g;
+                    pixels[pIdx + 2] = b;
+                    pixels[pIdx + 3] = 255;
                 }
-                currentZ += dzStep;
+                currentZ += dzPerPixel;
             }
-        };
-        Edge longEdge = initEdge(v0, v2);
-        Edge shortEdge1 = initEdge(v0, v1);
-        Edge shortEdge2 = initEdge(v1, v2);
-        int yStart = (int)v0.y; int yEnd = (int)v1.y;
-        float curX_Long = longEdge.x; float curZ_Long = longEdge.z;
-        float curX_Short = shortEdge1.x; float curZ_Short = shortEdge1.z;
-        for (int y = yStart; y < yEnd; y++) {
-            drawSpan(y, curX_Long, curX_Short, curZ_Long, curZ_Short);
-            curX_Long += longEdge.dx; curZ_Long += longEdge.dz;
-            curX_Short += shortEdge1.dx; curZ_Short += shortEdge1.dz;
-        }
-        curX_Short = v1.x; curZ_Short = v1.z;
-        yStart = (int)v1.y; yEnd = (int)v2.y;
-        for (int y = yStart; y <= yEnd; y++) {
-            drawSpan(y, curX_Long, curX_Short, curZ_Long, curZ_Short);
-            curX_Long += longEdge.dx; curZ_Long += longEdge.dz;
-            curX_Short += shortEdge2.dx; curZ_Short += shortEdge2.dz;
         }
     }
 
-    // -----------------------------------------------------------
-    // 替换原有的 softRasterize 函数
-    // -----------------------------------------------------------
-    std::vector<uint8_t> vertexProcessed; // 标记顶点是否已计算
+    std::vector<uint8_t> vertexProcessed; 
 
     void softRasterize()
     {
-        // 1. 基础状态更新
         float currentFrameTime = (float)glfwGetTime();
         float deltaTime = currentFrameTime - lastFrameTime;
         lastFrameTime = currentFrameTime;
 
-        if (autoRotate) {
-            float speed = 50.0f * deltaTime;
-            if (currentAxis == 0) modelRotation.x += speed;
-            else if (currentAxis == 1) modelRotation.y += speed;
-            else if (currentAxis == 2) modelRotation.z += speed;
+
+        int numInstances = 1;
+        Mat4 matGroupRot = Mat4::identity();
+        if (benchmarkExtremeMode) numInstances = 10; // 极限模式：10个物体
+
+        if (benchmarkMode) {
+            float t = (float)benchmarkFrameCount / TOTAL_TEST_FRAMES;
+
+            if (benchmarkExtremeMode) {
+                // [极限相机] 拉远到 18.0f 以看清 10 个物体 (3.5 -> 35.0)
+                modelRotation = {180.0f, 0.0f, 0.0f};
+                float groupAngle = t * 180.0f * (3.14159f / 180.0f);
+                matGroupRot = Mat4::rotateY(groupAngle);
+                cameraZ = 18.f + 7.5f * std::cos(t * 3.14159f * 2.0f);
+            } else {
+                // [普通相机]
+                modelRotation = {180.0f, t * 360.0f * 2.0f, 0.0f};
+                cameraZ = 3.5f + 2.0f * std::sin(t * 3.14159f * 2.0f);
+                if (cameraZ < 0.5f) cameraZ = 0.5f;
+            }
+        } else {
+            if (autoRotate) {
+                float speed = 50.0f * deltaTime;
+                if (currentAxis == 0) modelRotation.x += speed;
+                else if (currentAxis == 1) modelRotation.y += speed;
+                else if (currentAxis == 2) modelRotation.z += speed;
+            }
         }
 
-        // 清空缓冲区
         std::fill(pixels.begin(), pixels.end(), 30);
         std::fill(zBuffer.begin(), zBuffer.end(), 1.0f);
 
-        // 矩阵计算
+        // 基础矩阵
         float radX = modelRotation.x * 3.14159f / 180.0f;
         float radY = modelRotation.y * 3.14159f / 180.0f;
         float radZ = modelRotation.z * 3.14159f / 180.0f;
-        Mat4 matOffset = Mat4::translate(g_mesh.centerOffset.x, g_mesh.centerOffset.y, g_mesh.centerOffset.z);
-        Mat4 matScale = Mat4::scale(g_mesh.normalizeScale);
         Mat4 matRot = Mat4::rotateZ(radZ) * Mat4::rotateY(radY) * Mat4::rotateX(radX);
-        Mat4 matWorld = Mat4::translate(0, 0, 0);
+        Mat4 matScale = Mat4::scale(g_mesh.normalizeScale);
+        Mat4 matOffset = Mat4::translate(g_mesh.centerOffset.x, g_mesh.centerOffset.y, g_mesh.centerOffset.z);
+        Mat4 matWorld = Mat4::translate(0, 0, 0); 
         Mat4 view = Mat4::translate(-cameraX, -cameraY, -cameraZ);
         Mat4 proj = Mat4::perspective(45.0f * 3.14159f / 180.0f, (float)WIDTH / HEIGHT, 0.1f, 100.0f);
-        Mat4 mvp = proj * view * matWorld * matRot * matScale * matOffset;
+        // 注意：mvp 将在循环内根据 instance 更新，这里不计算最终值
 
-        // 调整缓存大小
         if (cachedProjectedVerts.size() != g_mesh.vertices.size()) {
             cachedProjectedVerts.resize(g_mesh.vertices.size());
             vertexProcessed.resize(g_mesh.vertices.size());
         }
+        // 注意：vertexProcessed 需要在每次 mvp 变更后重置，所以移到循环内
 
-        // *** 关键修改：重置脏标记，而不是计算所有顶点 ***
-        // memset 比 std::fill 快
-        std::memset(vertexProcessed.data(), 0, vertexProcessed.size());
+        Vec3 lightDir = Vec3{0.5f, 1.0f, 0.5f}.normalize();
 
-        // 定义按需变换 Lambda
-        // 注意：多线程下对 vertexProcessed 的写入存在良性竞争(Benign Race)，
-        // 即多个线程可能同时计算同一个顶点，但这不会导致错误，只是浪费少量计算。
-        auto transformVertex = [&](int vIdx) {
+        // 辅助 Lambda
+        auto transformVertex = [&](Mat4& currMvp, int vIdx) {
             if (!vertexProcessed[vIdx]) {
-                cachedProjectedVerts[vIdx] = mvp.transformPoint(g_mesh.vertices[vIdx]);
+                cachedProjectedVerts[vIdx] = currMvp.transformPoint(g_mesh.vertices[vIdx]);
                 vertexProcessed[vIdx] = 1;
             }
         };
 
-        Vec3 lightDir = Vec3{0.5f, 1.0f, 0.5f}.normalize();
-
         // =======================================================
-        // Mode 1 & 2: 暴力全量模式 (基准测试用)
+        // Mode 1 & 2: 暴力全量模式 (多实例)
         // =======================================================
         if (g_renderMode == 1 || g_renderMode == 2) 
         {
-            // 只有在暴力模式下，才预先计算所有顶点
-            #pragma omp parallel for
-            for (int i = 0; i < (int)g_mesh.vertices.size(); i++) {
-                cachedProjectedVerts[i] = mvp.transformPoint(g_mesh.vertices[i]);
-            }
+            // [修改 5] 外层循环实例
+            for (int inst = 0; inst < numInstances; inst++) {
+                
+                // 计算当前实例的 MVP
+                float xOffset = 0.0f;
+                if (benchmarkExtremeMode) xOffset = (inst - 4.5f) * 2.5f; 
+                
+                Mat4 matWorldInst = Mat4::translate(xOffset, 0, 0);
+                Mat4 currMvp = proj * view * matGroupRot * matWorldInst * matRot * matScale * matOffset;
 
-            if (g_renderMode == 1) {
-                // ... Mode 1 Z-Buffer 代码 (与之前相同) ...
+                // 顶点变换
                 #pragma omp parallel for
-                for (int i = 0; i < (int)g_mesh.faces.size(); i += 3) {
-                     // 复制之前的 Mode 1 内部循环逻辑
-                    Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
-                    Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
-                    Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
-                    if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
-                    float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
-                    float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
-                    float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
-                    int minX = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
-                    int minY = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
-                    
-                    Vec3 v0 = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1 = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2 = g_mesh.vertices[g_mesh.faces[i+2]];
-                    Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize();
-                    Vec3 rotNormal = matRot.transformPoint(rawNormal); 
-                    float intensity = std::max(0.0f, rotNormal.dot(lightDir));
-                    float lightFactor = 0.2f + 0.8f * intensity; 
-                    uint8_t colorVal = (uint8_t)std::clamp(255.0f * lightFactor, 0.0f, 255.0f);
-
-                    for (int y = minY; y <= maxY; y++) {
-                        for (int x = minX; x <= maxX; x++) {
-                            Vec3 P = {(float)x, (float)y, 0};
-                            Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
-                            if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
-                                float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z;
-                                int idx = y * WIDTH + x;
-                                if (z < zBuffer[idx]) {
-                                    zBuffer[idx] = z;
-                                    int pIdx = idx * 4;
-                                    pixels[pIdx + 0] = colorVal; pixels[pIdx + 1] = colorVal; pixels[pIdx + 2] = colorVal; pixels[pIdx + 3] = 255;
-                                }
-                            }
-                        }
-                    }
-                }
-            } 
-            else if (g_renderMode == 2) {
-                // ... Mode 2 Scanline 代码 (复制之前的逻辑) ...
-                // 为了节省篇幅，这里假设你保留了 Mode 2 的代码
-                 for (size_t i = 0; i < g_mesh.faces.size(); i += 3) {
-                    Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
-                    Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
-                    Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
-                    if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
-                    Vec3 v0_scr, v1_scr, v2_scr;
-                    v0_scr.x = (p0.x + 1.0f) * 0.5f * WIDTH;  v0_scr.y = (1.0f - p0.y) * 0.5f * HEIGHT; v0_scr.z = p0.z;
-                    v1_scr.x = (p1.x + 1.0f) * 0.5f * WIDTH;  v1_scr.y = (1.0f - p1.y) * 0.5f * HEIGHT; v1_scr.z = p1.z;
-                    v2_scr.x = (p2.x + 1.0f) * 0.5f * WIDTH;  v2_scr.y = (1.0f - p2.y) * 0.5f * HEIGHT; v2_scr.z = p2.z;
-                    Vec3 v0 = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1 = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2 = g_mesh.vertices[g_mesh.faces[i+2]];
-                    Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize();
-                    Vec3 rotNormal = matRot.transformPoint(rawNormal); 
-                    float intensity = std::max(0.0f, rotNormal.dot(lightDir));
-                    float lightFactor = 0.2f + 0.8f * intensity; 
-                    uint8_t colorVal = (uint8_t)std::clamp(255.0f * lightFactor, 0.0f, 255.0f);
-                    scanlineRasterizeTri(v0_scr, v1_scr, v2_scr, colorVal, colorVal, colorVal);
-                }
-            }
-        }
-        // =======================================================
-        // Mode 3: HZB + BVH (真正的惰性计算优化版)
-        // =======================================================
-        else if (g_renderMode == 3)
-        {
-            // Lambda: 检查 AABB 是否在视锥内 (Frustum Culling)
-            auto checkFrustum = [&](const Mesh::BVHNode& node, float& minX, float& maxX, float& minY, float& maxY, float& minZ) -> bool {
-                Vec3 corners[8] = {
-                    {node.minB.x, node.minB.y, node.minB.z}, {node.maxB.x, node.minB.y, node.minB.z},
-                    {node.minB.x, node.maxB.y, node.minB.z}, {node.maxB.x, node.maxB.y, node.minB.z},
-                    {node.minB.x, node.minB.y, node.maxB.z}, {node.maxB.x, node.minB.y, node.maxB.z},
-                    {node.minB.x, node.maxB.y, node.maxB.z}, {node.maxB.x, node.maxB.y, node.maxB.z}
-                };
-                minX = std::numeric_limits<float>::max(); maxX = std::numeric_limits<float>::lowest();
-                minY = std::numeric_limits<float>::max(); maxY = std::numeric_limits<float>::lowest();
-                minZ = std::numeric_limits<float>::max();
-
-                bool visible = false;
-                for(int k=0; k<8; k++) {
-                    float x = corners[k].x, y = corners[k].y, z = corners[k].z;
-                    float w = mvp.m[3][0]*x + mvp.m[3][1]*y + mvp.m[3][2]*z + mvp.m[3][3];
-                    if (w > 0.01f) { // 在近裁剪面之前
-                        float invW = 1.0f / w;
-                        float px = (mvp.m[0][0]*x + mvp.m[0][1]*y + mvp.m[0][2]*z + mvp.m[0][3]) * invW;
-                        float py = (mvp.m[1][0]*x + mvp.m[1][1]*y + mvp.m[1][2]*z + mvp.m[1][3]) * invW;
-                        float pz = (mvp.m[2][0]*x + mvp.m[2][1]*y + mvp.m[2][2]*z + mvp.m[2][3]) * invW;
-                        
-                        // 转换到屏幕空间
-                        float sx = (px + 1.0f) * 0.5f * WIDTH; 
-                        float sy = (1.0f - py) * 0.5f * HEIGHT;
-                        if(sx < minX) minX = sx; if(sx > maxX) maxX = sx;
-                        if(sy < minY) minY = sy; if(sy > maxY) maxY = sy;
-                        if(pz < minZ) minZ = pz;
-                        visible = true;
-                    }
-                }
-                if (!visible) return false; // 所有角点都在背后
-                // 视锥剔除
-                if (minX > WIDTH || maxX < 0 || minY > HEIGHT || maxY < 0 || minZ > 1.0f) return false;
-                return true;
-            };
-
-            // ---------------------------------------------------
-            // Pass 3.1: Pre-Z Pass (使用 BVH 加速，不计算颜色，只写深度)
-            // ---------------------------------------------------
-            std::vector<int> nodeStack; nodeStack.reserve(64);
-            if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
-
-            while(!nodeStack.empty()) {
-                int nodeId = nodeStack.back(); nodeStack.pop_back();
-                const auto& node = g_mesh.bvhNodes[nodeId];
-
-                float minX, maxX, minY, maxY, minZ;
-                if (!checkFrustum(node, minX, maxX, minY, maxY, minZ)) continue;
-
-                if (node.isLeaf()) {
-                    // *** 惰性计算核心 ***
-                    // 只有叶子节点在视锥内时，才去变换其中的三角形顶点
-                    for (int i = 0; i < node.triCount; i++) {
-                        int faceIdx = (node.triStart + i) * 3;
-                        int i0 = g_mesh.faces[faceIdx];
-                        int i1 = g_mesh.faces[faceIdx+1];
-                        int i2 = g_mesh.faces[faceIdx+2];
-
-                        // 按需变换！
-                        transformVertex(i0);
-                        transformVertex(i1);
-                        transformVertex(i2);
-
-                        // 简单的 Z-Only 光栅化
-                        Vec3 p0 = cachedProjectedVerts[i0];
-                        Vec3 p1 = cachedProjectedVerts[i1];
-                        Vec3 p2 = cachedProjectedVerts[i2];
-                        if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
-
-                        float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
-                        float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
-                        float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
-                        int minX_t = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX_t = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
-                        int minY_t = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY_t = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
-                        
-                        for (int y = minY_t; y <= maxY_t; y++) {
-                            for (int x = minX_t; x <= maxX_t; x++) {
-                                Vec3 P = {(float)x, (float)y, 0};
-                                Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
-                                if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
-                                    float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z;
-                                    int idx = y * WIDTH + x;
-                                    if (z < zBuffer[idx]) zBuffer[idx] = z;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    if(node.left != -1) nodeStack.push_back(node.left);
-                    if(node.right != -1) nodeStack.push_back(node.right);
-                }
-            }
-
-            // ---------------------------------------------------
-            // Pass 3.2: Build HZB (基于刚刚的 Pre-Z 结果)
-            // ---------------------------------------------------
-            buildHZB();
-
-            // ---------------------------------------------------
-            // Pass 3.3: Color Pass (使用 BVH + HZB 剔除)
-            // ---------------------------------------------------
-            nodeStack.clear();
-            if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
-
-            while(!nodeStack.empty()) {
-                int nodeId = nodeStack.back(); nodeStack.pop_back();
-                const auto& node = g_mesh.bvhNodes[nodeId];
-
-                float minX, maxX, minY, maxY, minZ;
-                // 1. Frustum Check (AABB)
-                if (!checkFrustum(node, minX, maxX, minY, maxY, minZ)) continue;
-
-                // 2. HZB Check (Occlusion Culling)
-                // 如果整个节点被最近的 HZB 深度遮挡，则直接跳过该节点及其子节点！
-                if (queryHZB((int)std::max(0.0f, minX), (int)std::min((float)WIDTH-1, maxX), 
-                             (int)std::max(0.0f, minY), (int)std::min((float)HEIGHT-1, maxY), minZ)) {
-                    continue; 
+                for (int i = 0; i < (int)g_mesh.vertices.size(); i++) {
+                    cachedProjectedVerts[i] = currMvp.transformPoint(g_mesh.vertices[i]);
                 }
 
-                if (node.isLeaf()) {
-                    for (int i = 0; i < node.triCount; i++) {
-                        int faceIdx = (node.triStart + i) * 3;
-                        int i0 = g_mesh.faces[faceIdx];
-                        int i1 = g_mesh.faces[faceIdx+1];
-                        int i2 = g_mesh.faces[faceIdx+2];
-
-                        // 如果 Pre-Z 阶段因为某些原因被剔除但这里可见（不太可能），或者 Pre-Z 没覆盖到
-                        // 这里再次确保变换。由于 vertexProcessed 标记，大部分顶点应该已经在 Pre-Z 阶段变换过了。
-                        transformVertex(i0); transformVertex(i1); transformVertex(i2);
-                        
-                        Vec3 p0 = cachedProjectedVerts[i0]; Vec3 p1 = cachedProjectedVerts[i1]; Vec3 p2 = cachedProjectedVerts[i2];
+                if (g_renderMode == 1) {
+                    #pragma omp parallel for
+                    for (int i = 0; i < (int)g_mesh.faces.size(); i += 3) {
+                        Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
+                        Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
+                        Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
                         if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
                         
                         float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
                         float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
                         float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
-                        int minX_t = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX_t = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
-                        int minY_t = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY_t = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
+                        int minX = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
+                        int minY = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
                         
-                        // 三角形级别的 HZB 剔除
-                        float triMinZ = std::min({p0.z, p1.z, p2.z});
-                        if (minX_t <= maxX_t && minY_t <= maxY_t) {
-                            if (queryHZB(minX_t, maxX_t, minY_t, maxY_t, triMinZ)) continue;
-                        }
-
-                        // 着色计算
-                        Vec3 v0 = g_mesh.vertices[i0]; Vec3 v1 = g_mesh.vertices[i1]; Vec3 v2 = g_mesh.vertices[i2];
+                        Vec3 v0 = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1 = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2 = g_mesh.vertices[g_mesh.faces[i+2]];
                         Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize();
                         Vec3 rotNormal = matRot.transformPoint(rawNormal); 
                         float intensity = std::max(0.0f, rotNormal.dot(lightDir));
                         float lightFactor = 0.2f + 0.8f * intensity; 
                         uint8_t colorVal = (uint8_t)std::clamp(255.0f * lightFactor, 0.0f, 255.0f);
 
-                        for (int y = minY_t; y <= maxY_t; y++) {
-                            for (int x = minX_t; x <= maxX_t; x++) {
+                        for (int y = minY; y <= maxY; y++) {
+                            for (int x = minX; x <= maxX; x++) {
                                 Vec3 P = {(float)x, (float)y, 0};
                                 Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
                                 if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
                                     float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z;
                                     int idx = y * WIDTH + x;
-                                    // 允许等于，因为 Pre-Z 已经填过 Zbuffer 了
-                                    if (z <= zBuffer[idx] + 0.00001f) {
+                                    if (z < zBuffer[idx]) {
+                                        zBuffer[idx] = z;
                                         int pIdx = idx * 4;
                                         pixels[pIdx + 0] = colorVal; pixels[pIdx + 1] = colorVal; pixels[pIdx + 2] = colorVal; pixels[pIdx + 3] = 255;
                                     }
@@ -847,18 +721,215 @@ private:
                             }
                         }
                     }
-                } else {
-                    if(node.left != -1) nodeStack.push_back(node.left);
-                    if(node.right != -1) nodeStack.push_back(node.right);
+                } 
+                else if (g_renderMode == 2) {
+                    #pragma omp parallel for
+                    for (size_t i = 0; i < g_mesh.faces.size(); i += 3) {
+                        Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
+                        Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
+                        Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
+                        if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
+                        Vec3 v0_scr, v1_scr, v2_scr;
+                        v0_scr.x = (p0.x + 1.0f) * 0.5f * WIDTH;  v0_scr.y = (1.0f - p0.y) * 0.5f * HEIGHT; v0_scr.z = p0.z;
+                        v1_scr.x = (p1.x + 1.0f) * 0.5f * WIDTH;  v1_scr.y = (1.0f - p1.y) * 0.5f * HEIGHT; v1_scr.z = p1.z;
+                        v2_scr.x = (p2.x + 1.0f) * 0.5f * WIDTH;  v2_scr.y = (1.0f - p2.y) * 0.5f * HEIGHT; v2_scr.z = p2.z;
+                        Vec3 v0 = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1 = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2 = g_mesh.vertices[g_mesh.faces[i+2]];
+                        Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize(); Vec3 rotNormal = matRot.transformPoint(rawNormal); 
+                        float intensity = std::max(0.0f, rotNormal.dot(lightDir)); float lightFactor = 0.2f + 0.8f * intensity; 
+                        uint8_t colorVal = (uint8_t)std::clamp(255.0f * lightFactor, 0.0f, 255.0f);
+                        scanlineRasterizeTri(v0_scr, v1_scr, v2_scr, colorVal, colorVal, colorVal);
+                    }
                 }
             }
         }
+        // =======================================================
+        // Mode 3: HZB + BVH (多实例)
+        // =======================================================
+        else if (g_renderMode == 3)
+        {
+            // [修改 6] Pass 3.1: 循环实例 - 深度预处理
+            for (int inst = 0; inst < numInstances; inst++) {
+                float xOffset = 0.0f;
+                if (benchmarkExtremeMode) xOffset = (inst - 4.5f) * 2.5f;
+                Mat4 matWorldInst = Mat4::translate(xOffset, 0, 0);
+                
+                Mat4 currMvp = proj * view * matGroupRot * matWorldInst * matRot * matScale * matOffset;
+                
+                std::memset(vertexProcessed.data(), 0, vertexProcessed.size());
 
-        // --- FPS Display 和后续代码保持不变 ---
-        // ... (复制之前的 drawFrame 剩余部分，FPS 计算等) ...
-        float currentFPS = 0.0f;
+                // Frustum Check Lambda
+                auto checkFrustum = [&](const Mesh::BVHNode& node, float& minX, float& maxX, float& minY, float& maxY, float& minZ) -> bool {
+                    Vec3 corners[8] = {
+                        {node.minB.x, node.minB.y, node.minB.z}, {node.maxB.x, node.minB.y, node.minB.z},
+                        {node.minB.x, node.maxB.y, node.minB.z}, {node.maxB.x, node.maxB.y, node.minB.z},
+                        {node.minB.x, node.minB.y, node.maxB.z}, {node.maxB.x, node.minB.y, node.maxB.z},
+                        {node.minB.x, node.maxB.y, node.maxB.z}, {node.maxB.x, node.maxB.y, node.maxB.z}
+                    };
+                    minX = std::numeric_limits<float>::max(); maxX = std::numeric_limits<float>::lowest();
+                    minY = std::numeric_limits<float>::max(); maxY = std::numeric_limits<float>::lowest();
+                    minZ = std::numeric_limits<float>::max();
+                    bool visible = false;
+                    for(int k=0; k<8; k++) {
+                        float x = corners[k].x, y = corners[k].y, z = corners[k].z;
+                        float w = currMvp.m[3][0]*x + currMvp.m[3][1]*y + currMvp.m[3][2]*z + currMvp.m[3][3];
+                        if (w > 0.01f) { 
+                            float invW = 1.0f / w;
+                            float px = (currMvp.m[0][0]*x + currMvp.m[0][1]*y + currMvp.m[0][2]*z + currMvp.m[0][3]) * invW;
+                            float py = (currMvp.m[1][0]*x + currMvp.m[1][1]*y + currMvp.m[1][2]*z + currMvp.m[1][3]) * invW;
+                            float pz = (currMvp.m[2][0]*x + currMvp.m[2][1]*y + currMvp.m[2][2]*z + currMvp.m[2][3]) * invW;
+                            float sx = (px + 1.0f) * 0.5f * WIDTH; float sy = (1.0f - py) * 0.5f * HEIGHT;
+                            if(sx < minX) minX = sx; if(sx > maxX) maxX = sx;
+                            if(sy < minY) minY = sy; if(sy > maxY) maxY = sy;
+                            if(pz < minZ) minZ = pz;
+                            visible = true;
+                        }
+                    }
+                    if (!visible) return false;
+                    if (minX > WIDTH || maxX < 0 || minY > HEIGHT || maxY < 0 || minZ > 1.0f) return false;
+                    return true;
+                };
+
+                std::vector<int> prePassTasks; prePassTasks.reserve(2048);
+                {
+                    std::vector<int> nodeStack; nodeStack.reserve(64);
+                    if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
+                    while(!nodeStack.empty()) {
+                        int nodeId = nodeStack.back(); nodeStack.pop_back();
+                        const auto& node = g_mesh.bvhNodes[nodeId];
+                        float minX, maxX, minY, maxY, minZ;
+                        if (!checkFrustum(node, minX, maxX, minY, maxY, minZ)) continue;
+                        if (node.isLeaf()) { prePassTasks.push_back(nodeId); } 
+                        else { if(node.left != -1) nodeStack.push_back(node.left); if(node.right != -1) nodeStack.push_back(node.right); }
+                    }
+                }
+
+                #pragma omp parallel for schedule(dynamic)
+                for(int k=0; k < (int)prePassTasks.size(); ++k) {
+                    const auto& node = g_mesh.bvhNodes[prePassTasks[k]];
+                    for (int i = 0; i < node.triCount; i++) {
+                        int faceIdx = (node.triStart + i) * 3;
+                        int i0 = g_mesh.faces[faceIdx]; int i1 = g_mesh.faces[faceIdx+1]; int i2 = g_mesh.faces[faceIdx+2];
+                        transformVertex(currMvp, i0); transformVertex(currMvp, i1); transformVertex(currMvp, i2);
+                        Vec3 p0 = cachedProjectedVerts[i0]; Vec3 p1 = cachedProjectedVerts[i1]; Vec3 p2 = cachedProjectedVerts[i2];
+                        if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
+                        float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
+                        float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
+                        float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
+                        int minX_t = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX_t = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
+                        int minY_t = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY_t = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
+                        for (int y = minY_t; y <= maxY_t; y++) {
+                            for (int x = minX_t; x <= maxX_t; x++) {
+                                Vec3 P = {(float)x, (float)y, 0}; Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
+                                if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
+                                    float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z; int idx = y * WIDTH + x;
+                                    if (z < zBuffer[idx]) zBuffer[idx] = z;
+                                }
+                            }
+                        }
+                    }
+                }
+            } // end loop instances (Depth)
+
+            // Pass 3.2: Build HZB (一次)
+            buildHZB();
+
+            // [修改 6.2] Pass 3.3: 循环实例 - 颜色绘制
+            for (int inst = 0; inst < numInstances; inst++) {
+                float xOffset = 0.0f;
+                if (benchmarkExtremeMode) xOffset = (inst - 4.5f) * 2.5f;
+                Mat4 matWorldInst = Mat4::translate(xOffset, 0, 0);
+                Mat4 currMvp = proj * view * matGroupRot* matWorldInst * matRot * matScale * matOffset;
+                
+                std::memset(vertexProcessed.data(), 0, vertexProcessed.size());
+
+                // 复制 checkFrustum Lambda (因为需要捕获新的 currMvp)
+                // 注意：这里需要重新定义 lambda 以捕获新的 currMvp
+                auto checkFrustum = [&](const Mesh::BVHNode& node, float& minX, float& maxX, float& minY, float& maxY, float& minZ) -> bool {
+                    Vec3 corners[8] = {
+                        {node.minB.x, node.minB.y, node.minB.z}, {node.maxB.x, node.minB.y, node.minB.z},
+                        {node.minB.x, node.maxB.y, node.minB.z}, {node.maxB.x, node.maxB.y, node.minB.z},
+                        {node.minB.x, node.minB.y, node.maxB.z}, {node.maxB.x, node.minB.y, node.maxB.z},
+                        {node.minB.x, node.maxB.y, node.maxB.z}, {node.maxB.x, node.maxB.y, node.maxB.z}
+                    };
+                    minX = std::numeric_limits<float>::max(); maxX = std::numeric_limits<float>::lowest();
+                    minY = std::numeric_limits<float>::max(); maxY = std::numeric_limits<float>::lowest();
+                    minZ = std::numeric_limits<float>::max();
+                    bool visible = false;
+                    for(int k=0; k<8; k++) {
+                        float x = corners[k].x, y = corners[k].y, z = corners[k].z;
+                        float w = currMvp.m[3][0]*x + currMvp.m[3][1]*y + currMvp.m[3][2]*z + currMvp.m[3][3];
+                        if (w > 0.01f) { 
+                            float invW = 1.0f / w;
+                            float px = (currMvp.m[0][0]*x + currMvp.m[0][1]*y + currMvp.m[0][2]*z + currMvp.m[0][3]) * invW;
+                            float py = (currMvp.m[1][0]*x + currMvp.m[1][1]*y + currMvp.m[1][2]*z + currMvp.m[1][3]) * invW;
+                            float pz = (currMvp.m[2][0]*x + currMvp.m[2][1]*y + currMvp.m[2][2]*z + currMvp.m[2][3]) * invW;
+                            float sx = (px + 1.0f) * 0.5f * WIDTH; float sy = (1.0f - py) * 0.5f * HEIGHT;
+                            if(sx < minX) minX = sx; if(sx > maxX) maxX = sx;
+                            if(sy < minY) minY = sy; if(sy > maxY) maxY = sy;
+                            if(pz < minZ) minZ = pz;
+                            visible = true;
+                        }
+                    }
+                    if (!visible) return false;
+                    if (minX > WIDTH || maxX < 0 || minY > HEIGHT || maxY < 0 || minZ > 1.0f) return false;
+                    return true;
+                };
+
+                std::vector<int> colorPassTasks; 
+                // [关键修复] 不要引用 prePassTasks.size()，因为它在作用域外
+                colorPassTasks.reserve(2048); 
+
+                {
+                    std::vector<int> nodeStack; nodeStack.reserve(64);
+                    if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
+                    while(!nodeStack.empty()) {
+                        int nodeId = nodeStack.back(); nodeStack.pop_back();
+                        const auto& node = g_mesh.bvhNodes[nodeId];
+                        float minX, maxX, minY, maxY, minZ;
+                        if (!checkFrustum(node, minX, maxX, minY, maxY, minZ)) continue;
+                        if (queryHZB((int)std::max(0.0f, minX), (int)std::min((float)WIDTH-1, maxX), (int)std::max(0.0f, minY), (int)std::min((float)HEIGHT-1, maxY), minZ)) continue; 
+                        if (node.isLeaf()) { colorPassTasks.push_back(nodeId); }
+                        else { if(node.left != -1) nodeStack.push_back(node.left); if(node.right != -1) nodeStack.push_back(node.right); }
+                    }
+                }
+
+                #pragma omp parallel for schedule(dynamic)
+                for(int k=0; k < (int)colorPassTasks.size(); ++k) {
+                    const auto& node = g_mesh.bvhNodes[colorPassTasks[k]];
+                    for (int i = 0; i < node.triCount; i++) {
+                        int faceIdx = (node.triStart + i) * 3;
+                        int i0 = g_mesh.faces[faceIdx]; int i1 = g_mesh.faces[faceIdx+1]; int i2 = g_mesh.faces[faceIdx+2];
+                        transformVertex(currMvp, i0); transformVertex(currMvp, i1); transformVertex(currMvp, i2);
+                        Vec3 p0 = cachedProjectedVerts[i0]; Vec3 p1 = cachedProjectedVerts[i1]; Vec3 p2 = cachedProjectedVerts[i2];
+                        if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
+                        float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
+                        float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
+                        float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
+                        int minX_t = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX_t = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
+                        int minY_t = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY_t = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
+                        float triMinZ = std::min({p0.z, p1.z, p2.z});
+                        if (minX_t <= maxX_t && minY_t <= maxY_t) { if (queryHZB(minX_t, maxX_t, minY_t, maxY_t, triMinZ)) continue; }
+                        Vec3 v0 = g_mesh.vertices[i0]; Vec3 v1 = g_mesh.vertices[i1]; Vec3 v2 = g_mesh.vertices[i2];
+                        Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize(); Vec3 rotNormal = matRot.transformPoint(rawNormal); 
+                        float intensity = std::max(0.0f, rotNormal.dot(lightDir)); float lightFactor = 0.2f + 0.8f * intensity; 
+                        uint8_t colorVal = (uint8_t)std::clamp(255.0f * lightFactor, 0.0f, 255.0f);
+                        for (int y = minY_t; y <= maxY_t; y++) {
+                            for (int x = minX_t; x <= maxX_t; x++) {
+                                Vec3 P = {(float)x, (float)y, 0}; Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
+                                if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
+                                    float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z; int idx = y * WIDTH + x;
+                                    if (z <= zBuffer[idx] + 0.00001f) { int pIdx = idx * 4; pixels[pIdx + 0] = colorVal; pixels[pIdx + 1] = colorVal; pixels[pIdx + 2] = colorVal; pixels[pIdx + 3] = 255; }
+                                }
+                            }
+                        }
+                    }
+                }
+            } // end loop instances (Color)
+        }
+float currentFPS = 0.0f;
         if (deltaTime > 0.0f) currentFPS = 1.0f / deltaTime;
         int fpsInt = (int)currentFPS;
+
         static const uint8_t digits[10][15] = {
             {1,1,1, 1,0,1, 1,0,1, 1,0,1, 1,1,1}, {0,1,0, 0,1,0, 0,1,0, 0,1,0, 0,1,0},
             {1,1,1, 0,0,1, 1,1,1, 1,0,0, 1,1,1}, {1,1,1, 0,0,1, 1,1,1, 0,0,1, 1,1,1},
@@ -866,11 +937,13 @@ private:
             {1,1,1, 1,0,0, 1,1,1, 1,0,1, 1,1,1}, {1,1,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1},
             {1,1,1, 1,0,1, 1,1,1, 1,0,1, 1,1,1}, {1,1,1, 1,0,1, 1,1,1, 0,0,1, 1,1,1}
         };
+
         auto drawPixel = [&](int x, int y, uint8_t r, uint8_t g, uint8_t b) {
             if(x<0||x>=WIDTH||y<0||y>=HEIGHT) return;
             int idx = (y * WIDTH + x) * 4;
             pixels[idx+0]=r; pixels[idx+1]=g; pixels[idx+2]=b; pixels[idx+3]=255;
         };
+
         auto drawDigit = [&](int num, int startX, int startY) {
             if (num < 0 || num > 9) return;
             int scale = 2; 
@@ -886,32 +959,35 @@ private:
                 }
             }
         };
-        int d1 = (fpsInt / 100) % 10; int d2 = (fpsInt / 10) % 10; int d3 = fpsInt % 10;
-        int cursorX = 10; int cursorY = 10; int spacing = 8;
+
+        // 绘制 FPS
+        int d1 = (fpsInt / 100) % 10; 
+        int d2 = (fpsInt / 10) % 10; 
+        int d3 = fpsInt % 10;
+        int cursorX = 10; int cursorY = 10; int spacing = 16; // 稍微调宽一点间距
+        
         if (d1 > 0) { drawDigit(d1, cursorX, cursorY); cursorX += spacing; }
         if (d1 > 0 || d2 > 0) { drawDigit(d2, cursorX, cursorY); cursorX += spacing; }
         drawDigit(d3, cursorX, cursorY);
+
+        // 绘制模式指示灯 (红点)
         int modeY = cursorY + 15;
         for(int m=0; m < g_renderMode; m++) {
              for(int py=0; py<4; py++) for(int px=0; px<4; px++)
-                drawPixel(10 + m*6 + px, modeY + py, 255, 50, 50);
+                drawPixel(10 + m*10 + px, modeY + py, 255, 50, 50);
         }
-
-        // Benchmark
+        // --- Benchmark Output ---
         if (benchmarkMode) {
+            float frameMs = deltaTime * 1000.0f;
+            std::cout << "BENCH_DATA," << benchmarkFrameCount << "," << frameMs << std::endl;
             benchmarkFrameCount++;
             if (benchmarkFrameCount >= TOTAL_TEST_FRAMES) {
-                auto endTime = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double, std::milli> elapsed = endTime - startTime;
-                double totalTimeMs = elapsed.count();
-                double avgTimeMs = totalTimeMs / TOTAL_TEST_FRAMES;
-                double avgFPS = 1000.0 / avgTimeMs;
-                std::cout << "BENCHMARK_RESULT: Mode=" << g_renderMode << " FPS=" << avgFPS << " Time=" << avgTimeMs << "ms" << std::endl;
+                std::cout << "BENCHMARK_DONE" << std::endl;
                 glfwSetWindowShouldClose(window, true);
             }
         }
     }
-    
+      
     // --- Vulkan Plumbing ---
     void updateTexture() {
         softRasterize();
@@ -1214,12 +1290,22 @@ int main(int argc, char **argv)
     HelloVulkanApplication app;
     const char *objFile = nullptr;
     int mode = 1;
+    bool extreme = false; 
+
     if (argc > 1) objFile = argv[1];
-    if (argc > 2) { try { mode = std::stoi(argv[2]); if(mode < 1 || mode > 3) mode = 1; } catch (...) { mode = 1; } }
-    if (!objFile) {
-        std::cout << "Usage: ./VulkanApp.exe model.obj [mode: 1,2,3]" << std::endl;
-        std::cout << "No model specified, loading dummy triangle." << std::endl;
+    if (argc > 2) { try { mode = std::stoi(argv[2]); } catch (...) { mode = 1; } }
+    
+    if (argc > 3) {
+        std::string arg3 = argv[3];
+        if (arg3 == "extreme") extreme = true;
     }
-    try { app.run(objFile, mode); } catch (const std::exception &e) { std::cerr << e.what() << std::endl; return EXIT_FAILURE; }
+
+    if (!objFile) {
+        std::cout << "Usage: ./VulkanApp.exe model.obj [mode] [extreme]" << std::endl;
+        return EXIT_SUCCESS;
+    }
+    
+    try { app.run(objFile, mode, extreme); } // <--- 传进去
+    catch (const std::exception &e) { std::cerr << e.what() << std::endl; return EXIT_FAILURE; }
     return EXIT_SUCCESS;
 }
