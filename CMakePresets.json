@@ -14,9 +14,9 @@
         "//comment_glfw": "指定 GLFW 路径",
         "GLFW_PATH": "C:/Lib/glfw-3.4",
 
-        "//comment_compiler": "强制使用 MSVC 编译器 (cl.exe)，避免意外调用 gcc",
-        "CMAKE_C_COMPILER": "cl.exe",
-        "CMAKE_CXX_COMPILER": "cl.exe",
+        "//comment_compiler": "强制使用gcc和g++",
+        "CMAKE_C_COMPILER": "gcc.exe",
+        "CMAKE_CXX_COMPILER": "g++.exe",
 
         "//comment_debug": "显示详细编译指令",
         "CMAKE_VERBOSE_MAKEFILE": "OFF"

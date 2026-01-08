@@ -430,7 +430,7 @@ private:
     float lastFrameTime = 0.0f;
 
     // --- Benchmark 变量 ---
-    bool benchmarkMode = true;         // 默认开启跑分以便测试
+    bool benchmarkMode = false;         // 默认开启跑分以便测试
     int benchmarkFrameCount = 0;       // 当前帧数计数
     const int TOTAL_TEST_FRAMES = 500; // 测试总帧数
     std::chrono::high_resolution_clock::time_point startTime;

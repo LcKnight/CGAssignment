@@ -5,6 +5,9 @@ project(VulkanHZB)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
+# 查找 OpenMP 包
+find_package(OpenMP REQUIRED)
 # ========================================================
 # 1. 查找依赖 (依赖 Presets 设置的环境变量)
 # ========================================================
@@ -19,7 +22,7 @@ if (NOT glfw3_FOUND)
     if (DEFINED GLFW_PATH)
         message(STATUS "Using GLFW from: ${GLFW_PATH}")
         include_directories(${GLFW_PATH}/include)
-        link_directories(${GLFW_PATH}/lib-vc2022) 
+        link_directories(${GLFW_PATH}/lib-mingw-w64) 
     else()
         message(WARNING "GLFW not found and GLFW_PATH not defined!")
     endif()
@@ -69,4 +72,8 @@ if (glfw3_FOUND)
     target_link_libraries(VulkanApp PRIVATE Vulkan::Vulkan glfw)
 else()
     target_link_libraries(VulkanApp PRIVATE Vulkan::Vulkan glfw3)
+endif()
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(VulkanApp PUBLIC OpenMP::OpenMP_CXX)
 endif()
