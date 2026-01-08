@@ -1,0 +1,44 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "ninja-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "environment": {
+        "//comment": "强制指定 Vulkan SDK 路径",
+        "VULKAN_SDK": "C:/VulkanSDK/1.4.335.0"
+      },
+      "cacheVariables": {
+        "//comment_glfw": "指定 GLFW 路径",
+        "GLFW_PATH": "C:/Lib/glfw-3.4",
+
+        "//comment_compiler": "强制使用 MSVC 编译器 (cl.exe)，避免意外调用 gcc",
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe",
+
+        "//comment_debug": "显示详细编译指令",
+        "CMAKE_VERBOSE_MAKEFILE": "OFF"
+      }
+    },
+    {
+      "name": "windows-ninja-debug",
+      "displayName": "Windows Debug (Ninja)",
+      "description": "Fast build using Ninja with Debug symbols",
+      "inherits": "ninja-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-ninja-release",
+      "displayName": "Windows Release (Ninja)",
+      "description": "Fast build using Ninja optimized",
+      "inherits": "ninja-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ]
+}

@@ -1,0 +1,87 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Release-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3
+					]
+				}
+			],
+			"name" : "Release",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "VulkanHZB",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "Compile_frag.spv::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Compile_frag.spv-Release-c474ba9440eda5807e51.json",
+					"name" : "Compile_frag.spv",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Compile_vert.spv::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Compile_vert.spv-Release-0523f77bb98e37fec9db.json",
+					"name" : "Compile_vert.spv",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Shaders::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Shaders-Release-5102f8439e32c38c275c.json",
+					"name" : "Shaders",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "VulkanApp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-VulkanApp-Release-4ccceb747092fdb1425c.json",
+					"name" : "VulkanApp",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Users/lcknight/Desktop/CG/Homework1/build/windows-ninja-release",
+		"source" : "C:/Users/lcknight/Desktop/CG/Homework1"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 8
+	}
+}
