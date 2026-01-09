@@ -19,10 +19,29 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
-      },
+      }
+    },
+    {
+      "name": "windows-mingw-base",
+      "hidden": true,
+      "description": "Base for MinGW (GCC)",
+      "inherits": "windows-base",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "gcc.exe",
         "CMAKE_CXX_COMPILER": "g++.exe"
+      }
+    },
+    {
+      "name": "windows-msvc-base",
+      "hidden": true,
+      "description": "Base for Visual Studio (CL) with Ninja",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe"
+      },
+      "environment": {
+        "//comment": "VSCode CMake Tools 通常会自动加载 VS 环境，如果手动运行可能需要先运行 vcvarsall.bat"
       }
     },
     {
@@ -40,40 +59,40 @@
       }
     },
     {
-      "name": "windows-ninja-debug",
-      "displayName": "Windows Debug",
-      "description": "Windows Debug Build",
-      "inherits": "windows-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
+      "name": "windows-mingw-debug",
+      "displayName": "Windows MinGW Debug",
+      "inherits": "windows-mingw-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     },
     {
-      "name": "windows-ninja-release",
-      "displayName": "Windows Release",
-      "description": "Windows Release Build",
-      "inherits": "windows-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
+      "name": "windows-mingw-release",
+      "displayName": "Windows MinGW Release",
+      "inherits": "windows-mingw-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
-      "name": "linux-ninja-debug",
+      "name": "windows-msvc-debug",
+      "displayName": "Windows MSVC Debug",
+      "inherits": "windows-msvc-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "windows-msvc-release",
+      "displayName": "Windows MSVC Release",
+      "inherits": "windows-msvc-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "linux-debug",
       "displayName": "Linux Debug",
-      "description": "Linux Debug Build",
       "inherits": "linux-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     },
     {
-      "name": "linux-ninja-release",
+      "name": "linux-release",
       "displayName": "Linux Release",
-      "description": "Linux Release Build",
       "inherits": "linux-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ]
 }

@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -765,7 +766,7 @@ private:
                 else if (g_renderMode == 2) { // Scanline
                     uint64_t batchFragments = 0;
                     #pragma omp parallel for reduction(+:batchFragments)
-                    for (size_t i = 0; i < g_mesh.faces.size(); i += 3) {
+                    for (int i = 0; i < g_mesh.faces.size(); i += 3) {
                         Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
                         Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
                         Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];

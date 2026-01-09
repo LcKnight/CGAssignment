@@ -62,27 +62,33 @@ endif()
 # ========================================================
 
 if(WIN32)
-    # [Windows] 优先使用 ThirdParty
-    set(GLFW_INCLUDE_DIR "${THIRDPARTY_DIR}/GLFW/include")
-    set(GLFW_LIBRARY_DIR "${THIRDPARTY_DIR}/GLFW/lib")
+    # 根据编译器类型选择库目录
+    if(MSVC)
+        set(GLFW_LIBRARY_DIR "${THIRDPARTY_DIR}/GLFW/lib-msvc") # 放 glfw3.lib
+        set(GLFW_LIB_NAME "glfw3") # 对应 glfw3.lib
+        message(STATUS "Using MSVC GLFW from: ${GLFW_LIBRARY_DIR}")
+    else()
+        set(GLFW_LIBRARY_DIR "${THIRDPARTY_DIR}/GLFW/lib-mingw") # 放 libglfw3.a
+        set(GLFW_LIB_NAME "glfw3") # 对应 libglfw3.a
+        message(STATUS "Using MinGW GLFW from: ${GLFW_LIBRARY_DIR}")
+    endif()
 
-    if(EXISTS "${GLFW_INCLUDE_DIR}")
-        message(STATUS "Using Local GLFW from: ${THIRDPARTY_DIR}/GLFW")
+    set(GLFW_INCLUDE_DIR "${THIRDPARTY_DIR}/GLFW/include")
+    
+    # 检查库目录是否存在
+    if(EXISTS "${GLFW_LIBRARY_DIR}")
         include_directories("${GLFW_INCLUDE_DIR}")
         link_directories("${GLFW_LIBRARY_DIR}")
-        
-        # Windows 下 MinGW 静态链接通常叫 glfw3
-        set(GLFW_LIBRARIES glfw3) 
+        set(GLFW_LIBRARIES ${GLFW_LIB_NAME}) 
     else()
-        # 回退到系统查找
+        # 回退逻辑
+        message(WARNING "Local GLFW lib not found in ${GLFW_LIBRARY_DIR}, trying system find...")
         find_package(glfw3 CONFIG REQUIRED)
         set(GLFW_LIBRARIES glfw)
     endif()
 else()
-    # [Linux/macOS] 使用系统安装的 GLFW
-    # 提示：Linux 需提前安装 (e.g., sudo apt install libglfw3-dev)
+    # Linux 逻辑不变
     find_package(glfw3 REQUIRED)
-    # Linux 下通常链接 target 'glfw'
     set(GLFW_LIBRARIES glfw)
 endif()
 
