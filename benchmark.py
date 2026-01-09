@@ -113,7 +113,9 @@ def plot_scenario_results(exe_path, model_path, scenario):
     plt.grid(True, linestyle='--', alpha=0.5)
     plt.legend()
     
-    out_file_fps = os.path.join(OUTPUT_DIR, f"chart_fps_{scenario['name'].replace(' ', '_')}.png")
+    model_name = os.path.splitext(os.path.basename(model_path))[0]
+
+    out_file_fps = os.path.join(OUTPUT_DIR, f"{model_name}_{scenario['name'].replace(' ', '_')}_fps.png")
     plt.savefig(out_file_fps, dpi=150)
     print(f"Saved: {out_file_fps}")
     plt.close()
@@ -135,7 +137,7 @@ def plot_scenario_results(exe_path, model_path, scenario):
     plt.grid(True, linestyle='--', alpha=0.5)
     plt.legend()
     
-    out_file_scatter = os.path.join(OUTPUT_DIR, f"chart_scatter_{scenario['name'].replace(' ', '_')}.png")
+    out_file_scatter = os.path.join(OUTPUT_DIR, f"{model_name}_{scenario['name'].replace(' ', '_')}_scatter.png")
     plt.savefig(out_file_scatter, dpi=150)
     print(f"Saved: {out_file_scatter}")
     plt.close()

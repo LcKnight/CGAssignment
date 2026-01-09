@@ -60,8 +60,8 @@ def main():
 
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
-
-    output_file = os.path.join(OUTPUT_DIR, "benchmark_table.txt")
+    model_name = os.path.splitext(os.path.basename(MODEL_PATH))[0]
+    output_file = os.path.join(OUTPUT_DIR, f"benchmark_table_{model_name}.txt")
     
     with open(output_file, "w") as f:
         # 重定向 stdout 到文件同时也打印到控制台

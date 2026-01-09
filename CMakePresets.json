@@ -2,30 +2,75 @@
   "version": 3,
   "configurePresets": [
     {
-      "name": "ninja-base",
+      "name": "base",
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
+        "CMAKE_VERBOSE_MAKEFILE": "OFF",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
         "CMAKE_C_COMPILER": "gcc.exe",
-        "CMAKE_CXX_COMPILER": "g++.exe",
-        "CMAKE_VERBOSE_MAKEFILE": "OFF"
+        "CMAKE_CXX_COMPILER": "g++.exe"
+      }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
       }
     },
     {
       "name": "windows-ninja-debug",
-      "displayName": "Windows Debug (Ninja)",
-      "description": "Fast build using Ninja with Debug symbols",
-      "inherits": "ninja-base",
+      "displayName": "Windows Debug",
+      "description": "Windows Debug Build",
+      "inherits": "windows-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
       "name": "windows-ninja-release",
-      "displayName": "Windows Release (Ninja)",
-      "description": "Fast build using Ninja optimized",
-      "inherits": "ninja-base",
+      "displayName": "Windows Release",
+      "description": "Windows Release Build",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-ninja-debug",
+      "displayName": "Linux Debug",
+      "description": "Linux Debug Build",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-ninja-release",
+      "displayName": "Linux Release",
+      "description": "Linux Release Build",
+      "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
