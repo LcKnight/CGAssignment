@@ -1240,6 +1240,7 @@ void softRasterize()
         if (vkAllocateMemory(device, &allocInfo, nullptr, &textureImageMemory) != VK_SUCCESS) throw std::runtime_error("failed to allocate image memory");
         vkBindImageMemory(device, textureImage, textureImageMemory, 0);
     }
+    //lc knight
     void createTextureImageView() {
         VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         viewInfo.image = textureImage; viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
