@@ -94,5 +94,15 @@
       "inherits": "linux-base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release"
+    },
+    {
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release"
+    }
   ]
 }
