@@ -17,9 +17,10 @@
 #include <sstream>
 #include <cmath>
 #include <array>
-#include <atomic> // [新增] 用于线程安全的片元计数
+#include <atomic> 
 #include <string>
 #include <algorithm>
+#include <iomanip> // [新增] 用于格式化输出
 
 #ifdef _WIN32
     #include <windows.h>
@@ -300,7 +301,6 @@ Vec3 modelRotation = {180.0f, 0.0f, 0.0f};
 bool autoRotate = true;                  
 int g_renderMode = 1; 
 
-// [新增] 线程安全的片元计数器
 std::atomic<uint64_t> g_num_fragments{0};
 
 std::vector<unsigned char> pixels(WIDTH * HEIGHT * 4);
@@ -332,8 +332,6 @@ static std::string getExecutableDir() {
 #else
     return ".";
 #endif
-
-    // 统一处理：去掉文件名，只留目录
     std::string path(buffer);
     size_t pos = path.find_last_of("/\\");
     return (std::string::npos == pos) ? "" : path.substr(0, pos);
@@ -546,7 +544,6 @@ private:
         return true;
     }
 
-    // [修复版] 更加稳定的扫描线光栅化
     uint64_t scanlineRasterizeTri(Vec3 v0, Vec3 v1, Vec3 v2, uint8_t r, uint8_t g, uint8_t b) {
         if (v0.y > v1.y) std::swap(v0, v1);
         if (v0.y > v2.y) std::swap(v0, v2);
@@ -561,9 +558,6 @@ private:
         float longDy = v2.y - v0.y;
         if (longDy == 0.0f) return 0;
 
-        // [统计] 累加片元数 (线程安全)
-        // 粗略估计：计算三角形面积覆盖的像素数，或者在循环中精确累加
-        // 为了精确起见，我们在循环中累加扫描线宽度
         uint64_t triFragments = 0;
 
         for (int y = yStart; y < yEnd; y++) {
@@ -603,12 +597,11 @@ private:
             float xPreStep = (float)ixStart + 0.5f - xStart;
             float currentZ = zStart + xPreStep * dzPerPixel;
 
-            // [统计] 累加本行片元
             triFragments += (uint64_t)(ixEnd - ixStart);
 
             for (int x = ixStart; x < ixEnd; x++) {
                 int idx = y * WIDTH + x;
-                if (currentZ < zBuffer[idx]) {
+                if (currentZ <= zBuffer[idx] + 1e-4f) {
                     zBuffer[idx] = currentZ;
                     int pIdx = idx * 4;
                     pixels[pIdx + 0] = r; pixels[pIdx + 1] = g; pixels[pIdx + 2] = b; pixels[pIdx + 3] = 255;
@@ -621,11 +614,23 @@ private:
 
     std::vector<uint8_t> vertexProcessed; 
 
-    void softRasterize()
+    // [Time Analysis Helper]
+    double get_ms(std::chrono::high_resolution_clock::time_point start, std::chrono::high_resolution_clock::time_point end) {
+        return std::chrono::duration<double, std::milli>(end - start).count();
+    }
+
+void softRasterize()
     {
-        // [新增] 重置片元计数器
         g_num_fragments = 0;
 
+        // [Profiler Variables]
+        double t_clear = 0.0, t_vertex = 0.0, t_cull = 0.0, t_raster = 0.0, t_prepass = 0.0, t_hzb = 0.0;
+        
+        auto t_start_total = std::chrono::high_resolution_clock::now();
+
+        // ------------------------------------------------
+        // 1. 基础状态更新
+        // ------------------------------------------------
         float currentFrameTime = (float)glfwGetTime();
         float deltaTime = currentFrameTime - lastFrameTime;
         lastFrameTime = currentFrameTime;
@@ -633,52 +638,47 @@ private:
         if (benchmarkMode && benchmarkFrameCount > 10) { 
             frameTimeHistory.push_back(deltaTime * 1000.0);
         }
+
         int numInstances = 1;
         Mat4 matGroupRot = Mat4::identity();
-
         if (benchmarkScenario == 1) numInstances = 20; 
         else if (benchmarkScenario == 2 || benchmarkScenario == 3) numInstances = 5; 
-        else numInstances = 1; 
 
         if (benchmarkMode) {
             float t = (float)benchmarkFrameCount / TOTAL_TEST_FRAMES;    
             modelRotation = {180.0f, t * 360.0f * 2.0f, 0.0f}; 
-            if (benchmarkScenario == 0) {
-                cameraZ = 3.5f + 1.5f * std::sin(t * 3.14159f * 2.0f);
-            } 
-            else if (benchmarkScenario == 1) {
-                cameraZ = 12.0f + 4.0f * std::sin(t * 3.14159f); 
-            }
-            else if (benchmarkScenario == 2) {
-                cameraZ = 12.0f; cameraY = 8.0f; cameraX = 8.0f * std::cos(t);
-                modelRotation = {180.0f, 0.0f, 0.0f}; 
-            }
-            else if (benchmarkScenario == 3) {
-                cameraZ = 12.0f + 3.0f * std::cos(t); cameraY = 0.0f; cameraX = 0.0f;
-                modelRotation = {180.0f, 0.0f, 0.0f};
-                matGroupRot = Mat4::rotateY(t * 1.5f); 
-            }
+            if (benchmarkScenario == 0) cameraZ = 3.5f + 1.5f * std::sin(t * 3.14159f * 2.0f);
+            else if (benchmarkScenario == 1) cameraZ = 12.0f + 4.0f * std::sin(t * 3.14159f); 
+            else if (benchmarkScenario == 2) { cameraZ = 12.0f; cameraY = 8.0f; cameraX = 8.0f * std::cos(t); modelRotation = {180.0f, 0.0f, 0.0f}; }
+            else if (benchmarkScenario == 3) { cameraZ = 12.0f + 3.0f * std::cos(t); cameraY = 0.0f; cameraX = 0.0f; modelRotation = {180.0f, 0.0f, 0.0f}; matGroupRot = Mat4::rotateY(t * 1.5f); }
             if (cameraZ < 0.5f) cameraZ = 0.5f;
         } else {
             if (autoRotate) {
                 float speed = 50.0f * deltaTime;
-                if (currentAxis == 0) modelRotation.x += speed;
-                else if (currentAxis == 1) modelRotation.y += speed;
-                else if (currentAxis == 2) modelRotation.z += speed;
+                if (currentAxis == 0) modelRotation.x += speed; else if (currentAxis == 1) modelRotation.y += speed; else if (currentAxis == 2) modelRotation.z += speed;
             }
             float moveSpeed = 15.0f * deltaTime; 
             if (keys[GLFW_KEY_LEFT_SHIFT]) moveSpeed *= 4.0f;
-            if (keys[GLFW_KEY_W]) cameraZ -= moveSpeed;
-            if (keys[GLFW_KEY_S]) cameraZ += moveSpeed;
-            if (keys[GLFW_KEY_A]) cameraX -= moveSpeed;
-            if (keys[GLFW_KEY_D]) cameraX += moveSpeed;
-            if (keys[GLFW_KEY_E]) cameraY += moveSpeed; 
-            if (keys[GLFW_KEY_Q]) cameraY -= moveSpeed;
+            if (keys[GLFW_KEY_W]) cameraZ -= moveSpeed; if (keys[GLFW_KEY_S]) cameraZ += moveSpeed;
+            if (keys[GLFW_KEY_A]) cameraX -= moveSpeed; if (keys[GLFW_KEY_D]) cameraX += moveSpeed;
+            if (keys[GLFW_KEY_E]) cameraY += moveSpeed; if (keys[GLFW_KEY_Q]) cameraY -= moveSpeed;
         }
 
-        std::fill(pixels.begin(), pixels.end(), 30);
+        // ------------------------------------------------
+        // 2. Clear Buffers
+        // ------------------------------------------------
+        auto t0 = std::chrono::high_resolution_clock::now();
+        // [修复] 确保 ZBuffer 初始化为 1.0 (最大深度)
         std::fill(zBuffer.begin(), zBuffer.end(), 1.0f);
+        // 清除颜色 (灰色背景)
+        std::fill(pixels.begin(), pixels.end(), 30);
+        for(size_t i=3; i<pixels.size(); i+=4) pixels[i] = 255; // Alpha
+        auto t1 = std::chrono::high_resolution_clock::now();
+        t_clear += get_ms(t0, t1);
 
+        // ------------------------------------------------
+        // 3. 矩阵与顶点准备
+        // ------------------------------------------------
         Mat4 matRot = Mat4::rotateZ(modelRotation.z * 3.14f/180.0f) * Mat4::rotateY(modelRotation.y * 3.14f/180.0f) * Mat4::rotateX(modelRotation.x * 3.14f/180.0f);
         Mat4 matScale = Mat4::scale(g_mesh.normalizeScale);
         Mat4 matOffset = Mat4::translate(g_mesh.centerOffset.x, g_mesh.centerOffset.y, g_mesh.centerOffset.z);
@@ -687,350 +687,331 @@ private:
 
         if (cachedProjectedVerts.size() != g_mesh.vertices.size()) {
             cachedProjectedVerts.resize(g_mesh.vertices.size());
-            vertexProcessed.resize(g_mesh.vertices.size());
         }
 
-        auto transformVertex = [&](Mat4& currMvp, int vIdx) {
-            if (!vertexProcessed[vIdx]) {
-                cachedProjectedVerts[vIdx] = currMvp.transformPoint(g_mesh.vertices[vIdx]);
-                vertexProcessed[vIdx] = 1;
+        // 定义通用辅助函数
+        auto checkFrustum = [&](const Mat4& currMvp, const Mesh::BVHNode& node, float& minX, float& maxX, float& minY, float& maxY, float& minZ) -> bool {
+            Vec3 corners[8] = {
+                {node.minB.x, node.minB.y, node.minB.z}, {node.maxB.x, node.minB.y, node.minB.z},
+                {node.minB.x, node.maxB.y, node.minB.z}, {node.maxB.x, node.maxB.y, node.minB.z},
+                {node.minB.x, node.minB.y, node.maxB.z}, {node.maxB.x, node.minB.y, node.maxB.z},
+                {node.minB.x, node.maxB.y, node.maxB.z}, {node.maxB.x, node.maxB.y, node.maxB.z}
+            };
+            minX = 1e9; maxX = -1e9; minY = 1e9; maxY = -1e9; minZ = 1e9;
+            bool anyInFront = false; 
+            for(int k=0; k<8; k++) {
+                float x = corners[k].x, y = corners[k].y, z = corners[k].z;
+                float w = currMvp.m[3][0]*x + currMvp.m[3][1]*y + currMvp.m[3][2]*z + currMvp.m[3][3];
+                if (w > 0.01f) {
+                    anyInFront = true;
+                    float invW = 1.0f / w;
+                    float px = (currMvp.m[0][0]*x + currMvp.m[0][1]*y + currMvp.m[0][2]*z + currMvp.m[0][3]) * invW;
+                    float py = (currMvp.m[1][0]*x + currMvp.m[1][1]*y + currMvp.m[1][2]*z + currMvp.m[1][3]) * invW;
+                    float pz = (currMvp.m[2][0]*x + currMvp.m[2][1]*y + currMvp.m[2][2]*z + currMvp.m[2][3]) * invW;
+                    float sx = (px + 1.0f) * 0.5f * WIDTH; float sy = (1.0f - py) * 0.5f * HEIGHT;
+                    if(sx < minX) minX = sx; if(sx > maxX) maxX = sx;
+                    if(sy < minY) minY = sy; if(sy > maxY) maxY = sy;
+                    if(pz < minZ) minZ = pz;
+                }
+            }
+            if (!anyInFront) return true; // 保守保留
+            if (minX > WIDTH || maxX < 0 || minY > HEIGHT || maxY < 0 || minZ > 1.0f) return false;
+            return true;
+        };
+
+        auto getNodeDepth = [&](const Mat4& currMvp, int nodeId) {
+            if (nodeId == -1) return 999999.0f;
+            const auto& n = g_mesh.bvhNodes[nodeId];
+            Vec3 center = (n.minB + n.maxB) * 0.5f;
+            Vec3 p = currMvp.transformPoint(center); return p.z;
+        };
+
+        // 核心函数：深度 Pre-Pass 专用扫描线 (不计算颜色，只写 ZBuffer)
+        // [修复] 提取出来确保逻辑一致性
+        auto rasterizeDepth = [&](const Vec3& p0, const Vec3& p1, const Vec3& p2) {
+            if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) return;
+            Vec3 v0 = p0, v1 = p1, v2 = p2;
+            v0.x = (v0.x + 1.0f) * 0.5f * WIDTH;  v0.y = (1.0f - v0.y) * 0.5f * HEIGHT;
+            v1.x = (v1.x + 1.0f) * 0.5f * WIDTH;  v1.y = (1.0f - v1.y) * 0.5f * HEIGHT;
+            v2.x = (v2.x + 1.0f) * 0.5f * WIDTH;  v2.y = (1.0f - v2.y) * 0.5f * HEIGHT;
+            
+            if (v0.y > v1.y) std::swap(v0, v1); if (v0.y > v2.y) std::swap(v0, v2); if (v1.y > v2.y) std::swap(v1, v2);
+            int yStart = std::max(0, (int)std::ceil(v0.y - 0.5f)); int yEnd = std::min((int)HEIGHT, (int)std::ceil(v2.y - 0.5f));
+            if (yStart >= yEnd) return; float longDy = v2.y - v0.y; if (longDy == 0.0f) return;
+
+            for (int y = yStart; y < yEnd; y++) {
+                float pixelY = (float)y + 0.5f; float tLong = (pixelY - v0.y) / longDy;
+                float xLong = v0.x + (v2.x - v0.x) * tLong; float zLong = v0.z + (v2.z - v0.z) * tLong;
+                float xShort, zShort;
+                if (pixelY < v1.y) { float dy1 = v1.y - v0.y; if(dy1==0) continue; float t = (pixelY - v0.y)/dy1; xShort = v0.x + (v1.x - v0.x)*t; zShort = v0.z + (v1.z - v0.z)*t; } 
+                else { float dy2 = v2.y - v1.y; if(dy2==0) continue; float t = (pixelY - v1.y)/dy2; xShort = v1.x + (v2.x - v1.x)*t; zShort = v1.z + (v2.z - v1.z)*t; }
+                if (xLong > xShort) { std::swap(xLong, xShort); std::swap(zLong, zShort); }
+                int ixStart = std::max(0, (int)std::ceil(xLong - 0.5f)); int ixEnd = std::min((int)WIDTH, (int)std::ceil(xShort - 0.5f));
+                float dz = (xShort - xLong == 0) ? 0 : (zShort - zLong)/(xShort - xLong);
+                float cz = zLong + (ixStart + 0.5f - xLong) * dz;
+                // [关键] 纯串行写入，无竞争
+                for(int x=ixStart; x<ixEnd; ++x) { 
+                    int idx = y*WIDTH+x; 
+                    if(cz < zBuffer[idx]) zBuffer[idx] = cz; 
+                    cz += dz; 
+                }
             }
         };
 
-        if (g_renderMode == 1 || g_renderMode == 2) 
-        {
-            for (int inst = 0; inst < numInstances; inst++) {
-                Mat4 matWorldInst = Mat4::identity();
-                if (benchmarkScenario == 1) { float x = (inst % 5 - 2.0f)*3.0f; float z = (inst / 5 - 1.5f)*3.0f; matWorldInst = Mat4::translate(x, 0, z); }
-                else if (benchmarkScenario == 2) { matWorldInst = Mat4::translate((inst - 2.0f)*3.5f, 0, 0); }
-                else if (benchmarkScenario == 3) { matWorldInst = Mat4::translate(0, 0, (inst - 2.0f)*3.5f); }
+        // ------------------------------------------------
+        // 渲染主循环
+        // ------------------------------------------------
+        for (int inst = 0; inst < numInstances; inst++) {
+            Mat4 matWorldInst = Mat4::identity();
+            if (benchmarkScenario == 1) { float x = (inst % 5 - 2.0f)*3.0f; float z = (inst / 5 - 1.5f)*3.0f; matWorldInst = Mat4::translate(x, 0, z); }
+            else if (benchmarkScenario == 2) { matWorldInst = Mat4::translate((inst - 2.0f)*3.5f, 0, 0); }
+            else if (benchmarkScenario == 3) { matWorldInst = Mat4::translate(0, 0, (inst - 2.0f)*3.5f); }
+            Mat4 currMvp = proj * view * matGroupRot * matWorldInst * matRot * matScale * matOffset;
 
-                Mat4 mvp = proj * view * matGroupRot * matWorldInst * matRot * matScale * matOffset;
+            // 1. 顶点变换 (并行化安全)
+            auto t_v_start = std::chrono::high_resolution_clock::now();
+            #pragma omp parallel for
+            for (int i = 0; i < (int)g_mesh.vertices.size(); i++) {
+                cachedProjectedVerts[i] = currMvp.transformPoint(g_mesh.vertices[i]);
+            }
+            auto t_v_end = std::chrono::high_resolution_clock::now();
+            t_vertex += get_ms(t_v_start, t_v_end);
 
-                #pragma omp parallel for
-                for (int i = 0; i < (int)g_mesh.vertices.size(); i++) {
-                    cachedProjectedVerts[i] = mvp.transformPoint(g_mesh.vertices[i]);
-                }
+            // ===============================================
+            // Mode 1: Z-Buffer (Baseline)
+            // Mode 2: Scanline (Baseline)
+            // ===============================================
+            if (g_renderMode == 1 || g_renderMode == 2) {
+                auto t_r_start = std::chrono::high_resolution_clock::now();
+                // [强制串行] 避免 Z-Buffer 竞争
+                for (int i = 0; i < (int)g_mesh.faces.size(); i += 3) {
+                    Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
+                    Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
+                    Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
+                    if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
 
-                if (g_renderMode == 1) { // Z-Buffer
-                    uint64_t batchFragments = 0;
-                    //增加 reduction(+:batchFragments)
-                    #pragma omp parallel for reduction(+:batchFragments)
-                    for (int i = 0; i < (int)g_mesh.faces.size(); i += 3) {
-                        Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
-                        Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
-                        Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
-                        if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
-                        
-                        float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
-                        float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
-                        float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
+                    Vec3 v0_w = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1_w = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2_w = g_mesh.vertices[g_mesh.faces[i+2]];
+                    Vec3 rawNormal = (v1_w - v0_w).cross(v2_w - v0_w).normalize(); Vec3 rotNormal = matRot.transformPoint(rawNormal); 
+                    Vec3 litColor = simple_shading(rotNormal);
+                    uint8_t r = (uint8_t)std::clamp(litColor.x * 255.0f, 0.0f, 255.0f);
+                    uint8_t g = (uint8_t)std::clamp(litColor.y * 255.0f, 0.0f, 255.0f);
+                    uint8_t b = (uint8_t)std::clamp(litColor.z * 255.0f, 0.0f, 255.0f);
+
+                    float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
+                    float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
+                    float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
+
+                    if (g_renderMode == 2) {
+                        // Scanline
+                        Vec3 v0; v0.x=sx0; v0.y=sy0; v0.z=p0.z;
+                        Vec3 v1; v1.x=sx1; v1.y=sy1; v1.z=p1.z;
+                        Vec3 v2; v2.x=sx2; v2.y=sy2; v2.z=p2.z;
+                        g_num_fragments += scanlineRasterizeTri(v0, v1, v2, r, g, b);
+                    } else {
+                        // Mode 1: Box
                         int minX = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
                         int minY = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
-                        
-                        Vec3 v0 = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1 = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2 = g_mesh.vertices[g_mesh.faces[i+2]];
-                        Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize();
-                        Vec3 rotNormal = matRot.transformPoint(rawNormal); 
-                        Vec3 litColor = simple_shading(rotNormal);
-                        uint8_t r = (uint8_t)std::clamp(litColor.x * 255.0f, 0.0f, 255.0f);
-                        uint8_t g = (uint8_t)std::clamp(litColor.y * 255.0f, 0.0f, 255.0f);
-                        uint8_t b = (uint8_t)std::clamp(litColor.z * 255.0f, 0.0f, 255.0f);
-
-                        // [统计]
-                        uint64_t localFragCount = 0;
-
                         for (int y = minY; y <= maxY; y++) {
                             for (int x = minX; x <= maxX; x++) {
-                                Vec3 P = {(float)x, (float)y, 0};
-                                Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
+                                Vec3 P = {(float)x, (float)y, 0}; Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
                                 if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
-                                    // [统计] 增加片元数
-                                    localFragCount++;
-
-                                    float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z;
-                                    int idx = y * WIDTH + x;
+                                    float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z; int idx = y * WIDTH + x;
                                     if (z < zBuffer[idx]) {
-                                        zBuffer[idx] = z;
-                                        int pIdx = idx * 4;
+                                        zBuffer[idx] = z; int pIdx = idx * 4;
                                         pixels[pIdx + 0] = r; pixels[pIdx + 1] = g; pixels[pIdx + 2] = b; pixels[pIdx + 3] = 255;
                                     }
                                 }
                             }
                         }
-                        // [新增] 累加到局部变量 (这是纯寄存器操作，极快)
-                        batchFragments += localFragCount;
                     }
-                    // 循环结束后，由主线程一次性更新全局变量
-                    g_num_fragments += batchFragments;
-                } 
-                else if (g_renderMode == 2) { // Scanline
-                    uint64_t batchFragments = 0;
-                    #pragma omp parallel for reduction(+:batchFragments)
-                    for (int i = 0; i < g_mesh.faces.size(); i += 3) {
-                        Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
-                        Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
-                        Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
-                        if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
-                        Vec3 v0_scr, v1_scr, v2_scr;
-                        v0_scr.x = (p0.x + 1.0f) * 0.5f * WIDTH;  v0_scr.y = (1.0f - p0.y) * 0.5f * HEIGHT; v0_scr.z = p0.z;
-                        v1_scr.x = (p1.x + 1.0f) * 0.5f * WIDTH;  v1_scr.y = (1.0f - p1.y) * 0.5f * HEIGHT; v1_scr.z = p1.z;
-                        v2_scr.x = (p2.x + 1.0f) * 0.5f * WIDTH;  v2_scr.y = (1.0f - p2.y) * 0.5f * HEIGHT; v2_scr.z = p2.z;
-                        
-                        Vec3 v0 = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1 = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2 = g_mesh.vertices[g_mesh.faces[i+2]];
-                        Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize(); Vec3 rotNormal = matRot.transformPoint(rawNormal); 
-
-                        Vec3 litColor = simple_shading(rotNormal);
-                        uint8_t r = (uint8_t)std::clamp(litColor.x * 255.0f, 0.0f, 255.0f);
-                        uint8_t g = (uint8_t)std::clamp(litColor.y * 255.0f, 0.0f, 255.0f);
-                        uint8_t b = (uint8_t)std::clamp(litColor.z * 255.0f, 0.0f, 255.0f);
-
-                        batchFragments += scanlineRasterizeTri(v0_scr, v1_scr, v2_scr, r, g, b);
-                    }
-                    g_num_fragments += batchFragments;
                 }
+                auto t_r_end = std::chrono::high_resolution_clock::now();
+                t_raster += get_ms(t_r_start, t_r_end);
             }
-        }
-        else if (g_renderMode == 3 || g_renderMode == 4)
-        {
-            for (int inst = 0; inst < numInstances; inst++) {
-                Mat4 matWorldInst = Mat4::identity();
-                if (benchmarkScenario == 1) { float x = (inst % 5 - 2.0f)*3.0f; float z = (inst / 5 - 1.5f)*3.0f; matWorldInst = Mat4::translate(x, 0, z); }
-                else if (benchmarkScenario == 2) { matWorldInst = Mat4::translate((inst - 2.0f)*3.5f, 0, 0); }
-                else if (benchmarkScenario == 3) { matWorldInst = Mat4::translate(0, 0, (inst - 2.0f)*3.5f); }
-                Mat4 currMvp = proj * view * matGroupRot * matWorldInst * matRot * matScale * matOffset;
-                
-                std::memset(vertexProcessed.data(), 0, vertexProcessed.size());
 
-                auto getNodeDepth = [&](int nodeId) {
-                    if (nodeId == -1) return 999999.0f;
-                    const auto& n = g_mesh.bvhNodes[nodeId];
-                    Vec3 center = (n.minB + n.maxB) * 0.5f;
-                    Vec3 p = currMvp.transformPoint(center); return p.z;
-                };
-
-                auto checkFrustum = [&](const Mesh::BVHNode& node, float& minX, float& maxX, float& minY, float& maxY, float& minZ) -> bool {
-                    Vec3 corners[8] = {
-                        {node.minB.x, node.minB.y, node.minB.z}, {node.maxB.x, node.minB.y, node.minB.z},
-                        {node.minB.x, node.maxB.y, node.minB.z}, {node.maxB.x, node.maxB.y, node.minB.z},
-                        {node.minB.x, node.minB.y, node.maxB.z}, {node.maxB.x, node.minB.y, node.maxB.z},
-                        {node.minB.x, node.maxB.y, node.maxB.z}, {node.maxB.x, node.maxB.y, node.maxB.z}
-                    };
-                    minX = std::numeric_limits<float>::max(); maxX = std::numeric_limits<float>::lowest();
-                    minY = std::numeric_limits<float>::max(); maxY = std::numeric_limits<float>::lowest();
-                    minZ = std::numeric_limits<float>::max();
-                    bool visible = false;
-                    for(int k=0; k<8; k++) {
-                        float x = corners[k].x, y = corners[k].y, z = corners[k].z;
-                        float w = currMvp.m[3][0]*x + currMvp.m[3][1]*y + currMvp.m[3][2]*z + currMvp.m[3][3];
-                        if (w > 0.01f) { 
-                            float invW = 1.0f / w;
-                            float px = (currMvp.m[0][0]*x + currMvp.m[0][1]*y + currMvp.m[0][2]*z + currMvp.m[0][3]) * invW;
-                            float py = (currMvp.m[1][0]*x + currMvp.m[1][1]*y + currMvp.m[1][2]*z + currMvp.m[1][3]) * invW;
-                            float pz = (currMvp.m[2][0]*x + currMvp.m[2][1]*y + currMvp.m[2][2]*z + currMvp.m[2][3]) * invW;
-                            float sx = (px + 1.0f) * 0.5f * WIDTH; float sy = (1.0f - py) * 0.5f * HEIGHT;
-                            if(sx < minX) minX = sx; if(sx > maxX) maxX = sx;
-                            if(sy < minY) minY = sy; if(sy > maxY) maxY = sy;
-                            if(pz < minZ) minZ = pz;
-                            visible = true;
-                        }
-                    }
-                    if (!visible) return false;
-                    if (minX > WIDTH || maxX < 0 || minY > HEIGHT || maxY < 0 || minZ > 1.0f) return false;
-                    return true;
-                };
-
-                std::vector<int> prePassTasks; prePassTasks.reserve(2048);
-                {
-                    std::vector<int> nodeStack; nodeStack.reserve(64);
-                    if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
-                    while(!nodeStack.empty()) {
-                        int nodeId = nodeStack.back(); nodeStack.pop_back();
-                        const auto& node = g_mesh.bvhNodes[nodeId];
-                        float minX, maxX, minY, maxY, minZ;
-                        if (!checkFrustum(node, minX, maxX, minY, maxY, minZ)) continue;
-                        
-                        if (node.isLeaf()) { 
-                            prePassTasks.push_back(nodeId); 
-                        } else { 
-                            float dLeft = getNodeDepth(node.left); float dRight = getNodeDepth(node.right);
-                            if (dLeft > dRight) {
-                                if(node.left != -1) nodeStack.push_back(node.left);
-                                if(node.right != -1) nodeStack.push_back(node.right);
-                            } else {
-                                if(node.right != -1) nodeStack.push_back(node.right);
-                                if(node.left != -1) nodeStack.push_back(node.left);
-                            }
-                        }
-                    }
+            // ===============================================
+            // Mode 3: HZB Linear (Standard HZB without BVH)
+            // ===============================================
+            else if (g_renderMode == 3) {
+                // A. Depth Pre-Pass (Fill Z-Buffer First)
+                // [强制串行]
+                auto t_pre_start = std::chrono::high_resolution_clock::now();
+                for (int i = 0; i < (int)g_mesh.faces.size(); i += 3) {
+                    rasterizeDepth(cachedProjectedVerts[g_mesh.faces[i]], 
+                                   cachedProjectedVerts[g_mesh.faces[i+1]], 
+                                   cachedProjectedVerts[g_mesh.faces[i+2]]);
                 }
-                
-                #pragma omp parallel for schedule(dynamic)
-                for(int k=0; k < (int)prePassTasks.size(); ++k) {
-                    const auto& node = g_mesh.bvhNodes[prePassTasks[k]];
-                    for (int i = 0; i < node.triCount; i++) {
-                        int faceIdx = (node.triStart + i) * 3;
-                        int i0 = g_mesh.faces[faceIdx]; int i1 = g_mesh.faces[faceIdx+1]; int i2 = g_mesh.faces[faceIdx+2];
-                        transformVertex(currMvp, i0); transformVertex(currMvp, i1); transformVertex(currMvp, i2);
-                        Vec3 p0 = cachedProjectedVerts[i0]; Vec3 p1 = cachedProjectedVerts[i1]; Vec3 p2 = cachedProjectedVerts[i2];
-                        if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
-                        float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
-                        float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
-                        float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
-                        int minX_t = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX_t = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
-                        int minY_t = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY_t = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
-                        for (int y = minY_t; y <= maxY_t; y++) {
-                            for (int x = minX_t; x <= maxX_t; x++) {
-                                Vec3 P = {(float)x, (float)y, 0}; Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
-                                if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
-                                    float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z; int idx = y * WIDTH + x;
-                                    if (z < zBuffer[idx]) zBuffer[idx] = z;
-                                }
-                            }
-                        }
-                    }
-                }
-            } 
+                auto t_pre_end = std::chrono::high_resolution_clock::now();
+                t_prepass += get_ms(t_pre_start, t_pre_end);
 
-            if (g_renderMode == 4) {
+                // B. Build HZB
+                auto t_hzb_s = std::chrono::high_resolution_clock::now();
                 buildHZB();
+                auto t_hzb_e = std::chrono::high_resolution_clock::now();
+                t_hzb += get_ms(t_hzb_s, t_hzb_e);
+
+                // C. Color Pass (With HZB Cull)
+                // [强制串行]
+                auto t_r_start = std::chrono::high_resolution_clock::now();
+                for (int i = 0; i < (int)g_mesh.faces.size(); i += 3) {
+                    Vec3 p0 = cachedProjectedVerts[g_mesh.faces[i]];
+                    Vec3 p1 = cachedProjectedVerts[g_mesh.faces[i+1]];
+                    Vec3 p2 = cachedProjectedVerts[g_mesh.faces[i+2]];
+                    if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
+
+                    // HZB Cull
+                    float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
+                    float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
+                    float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
+                    int minX = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
+                    int minY = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
+                    float minZ = std::min({p0.z, p1.z, p2.z});
+                    
+                    if (queryHZB(minX, maxX, minY, maxY, minZ)) continue; // 被剔除
+
+                    // Rasterize
+                    Vec3 v0_w = g_mesh.vertices[g_mesh.faces[i]]; Vec3 v1_w = g_mesh.vertices[g_mesh.faces[i+1]]; Vec3 v2_w = g_mesh.vertices[g_mesh.faces[i+2]];
+                    Vec3 rawNormal = (v1_w - v0_w).cross(v2_w - v0_w).normalize(); Vec3 rotNormal = matRot.transformPoint(rawNormal); 
+                    Vec3 litColor = simple_shading(rotNormal);
+                    uint8_t r = (uint8_t)std::clamp(litColor.x * 255.0f, 0.0f, 255.0f);
+                    uint8_t g = (uint8_t)std::clamp(litColor.y * 255.0f, 0.0f, 255.0f);
+                    uint8_t b = (uint8_t)std::clamp(litColor.z * 255.0f, 0.0f, 255.0f);
+                    Vec3 v0_scr; v0_scr.x=sx0; v0_scr.y=sy0; v0_scr.z=p0.z;
+                    Vec3 v1_scr; v1_scr.x=sx1; v1_scr.y=sy1; v1_scr.z=p1.z;
+                    Vec3 v2_scr; v2_scr.x=sx2; v2_scr.y=sy2; v2_scr.z=p2.z;
+                    g_num_fragments += scanlineRasterizeTri(v0_scr, v1_scr, v2_scr, r, g, b);
+                }
+                auto t_r_end = std::chrono::high_resolution_clock::now();
+                t_raster += get_ms(t_r_start, t_r_end);
             }
 
-            for (int inst = 0; inst < numInstances; inst++) {
-                uint64_t batchFragments = 0; // [新增]
-                Mat4 matWorldInst = Mat4::identity();
-                if (benchmarkScenario == 1) { float x = (inst % 5 - 2.0f)*3.0f; float z = (inst / 5 - 1.5f)*3.0f; matWorldInst = Mat4::translate(x, 0, z); }
-                else if (benchmarkScenario == 2) { matWorldInst = Mat4::translate((inst - 2.0f)*3.5f, 0, 0); }
-                else if (benchmarkScenario == 3) { matWorldInst = Mat4::translate(0, 0, (inst - 2.0f)*3.5f); }
-                Mat4 currMvp = proj * view * matGroupRot * matWorldInst * matRot * matScale * matOffset;
-                
-                std::memset(vertexProcessed.data(), 0, vertexProcessed.size());
-
-                auto getNodeDepth = [&](int nodeId) {
-                    if (nodeId == -1) return 999999.0f;
-                    const auto& n = g_mesh.bvhNodes[nodeId];
-                    Vec3 center = (n.minB + n.maxB) * 0.5f;
-                    Vec3 p = currMvp.transformPoint(center); return p.z;
-                };
-
-                auto checkFrustum = [&](const Mesh::BVHNode& node, float& minX, float& maxX, float& minY, float& maxY, float& minZ) -> bool {
-                    Vec3 corners[8] = {
-                        {node.minB.x, node.minB.y, node.minB.z}, {node.maxB.x, node.minB.y, node.minB.z},
-                        {node.minB.x, node.maxB.y, node.minB.z}, {node.maxB.x, node.maxB.y, node.minB.z},
-                        {node.minB.x, node.minB.y, node.maxB.z}, {node.maxB.x, node.minB.y, node.maxB.z},
-                        {node.minB.x, node.maxB.y, node.maxB.z}, {node.maxB.x, node.maxB.y, node.maxB.z}
-                    };
-                    minX = std::numeric_limits<float>::max(); maxX = std::numeric_limits<float>::lowest();
-                    minY = std::numeric_limits<float>::max(); maxY = std::numeric_limits<float>::lowest();
-                    minZ = std::numeric_limits<float>::max();
-                    bool visible = false;
-                    for(int k=0; k<8; k++) {
-                        float x = corners[k].x, y = corners[k].y, z = corners[k].z;
-                        float w = currMvp.m[3][0]*x + currMvp.m[3][1]*y + currMvp.m[3][2]*z + currMvp.m[3][3];
-                        if (w > 0.01f) { 
-                            float invW = 1.0f / w;
-                            float px = (currMvp.m[0][0]*x + currMvp.m[0][1]*y + currMvp.m[0][2]*z + currMvp.m[0][3]) * invW;
-                            float py = (currMvp.m[1][0]*x + currMvp.m[1][1]*y + currMvp.m[1][2]*z + currMvp.m[1][3]) * invW;
-                            float pz = (currMvp.m[2][0]*x + currMvp.m[2][1]*y + currMvp.m[2][2]*z + currMvp.m[2][3]) * invW;
-                            float sx = (px + 1.0f) * 0.5f * WIDTH; float sy = (1.0f - py) * 0.5f * HEIGHT;
-                            if(sx < minX) minX = sx; if(sx > maxX) maxX = sx;
-                            if(sy < minY) minY = sy; if(sy > maxY) maxY = sy;
-                            if(pz < minZ) minZ = pz;
-                            visible = true;
-                        }
-                    }
-                    if (!visible) return false;
-                    if (minX > WIDTH || maxX < 0 || minY > HEIGHT || maxY < 0 || minZ > 1.0f) return false;
-                    return true;
-                };
-
-                std::vector<int> colorPassTasks; colorPassTasks.reserve(2048); 
-                {
-                    std::vector<int> nodeStack; nodeStack.reserve(64);
-                    if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
-                    while(!nodeStack.empty()) {
-                        int nodeId = nodeStack.back(); nodeStack.pop_back();
-                        const auto& node = g_mesh.bvhNodes[nodeId];
-                        float minX, maxX, minY, maxY, minZ;
-                        if (!checkFrustum(node, minX, maxX, minY, maxY, minZ)) continue;
-                        
-                        if (g_renderMode == 4) {
-                            if (queryHZB((int)std::max(0.0f, minX), (int)std::min((float)WIDTH-1, maxX), 
-                                         (int)std::max(0.0f, minY), (int)std::min((float)HEIGHT-1, maxY), minZ)) {
-                                continue; 
-                            }
-                        }
-
-                        if (node.isLeaf()) { 
-                            colorPassTasks.push_back(nodeId); 
-                        }
-                        else { 
-                            float dLeft = getNodeDepth(node.left); float dRight = getNodeDepth(node.right);
-                            if (dLeft > dRight) {
-                                if(node.left != -1) nodeStack.push_back(node.left);
-                                if(node.right != -1) nodeStack.push_back(node.right);
-                            } else {
-                                if(node.right != -1) nodeStack.push_back(node.right);
-                                if(node.left != -1) nodeStack.push_back(node.left);
-                            }
-                        }
+            // ===============================================
+            // Mode 4: HZB + BVH (Complete Mode)
+            // ===============================================
+            else if (g_renderMode == 4) {
+                // A. Depth Pre-Pass (Using BVH traversal to speed up pre-pass)
+                auto t_pre_start = std::chrono::high_resolution_clock::now();
+                std::vector<int> prePassTasks; prePassTasks.reserve(2048);
+                std::vector<int> nodeStack; nodeStack.reserve(64);
+                if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
+                while(!nodeStack.empty()) {
+                    int nodeId = nodeStack.back(); nodeStack.pop_back();
+                    const auto& node = g_mesh.bvhNodes[nodeId];
+                    float minX, maxX, minY, maxY, minZ;
+                    // Standard Frustum Culling
+                    if (!checkFrustum(currMvp, node, minX, maxX, minY, maxY, minZ)) continue;
+                    if (node.isLeaf()) { prePassTasks.push_back(nodeId); } 
+                    else { 
+                        float dLeft = getNodeDepth(currMvp, node.left); float dRight = getNodeDepth(currMvp, node.right);
+                        if (dLeft > dRight) { if(node.left != -1) nodeStack.push_back(node.left); if(node.right != -1) nodeStack.push_back(node.right); }
+                        else { if(node.right != -1) nodeStack.push_back(node.right); if(node.left != -1) nodeStack.push_back(node.left); }
                     }
                 }
+                // Serial Depth Rasterization
+                for(int nodeId : prePassTasks) {
+                    const auto& node = g_mesh.bvhNodes[nodeId];
+                    for (int i = 0; i < node.triCount; i++) {
+                        int faceIdx = (node.triStart + i) * 3;
+                        rasterizeDepth(cachedProjectedVerts[g_mesh.faces[faceIdx]], 
+                                       cachedProjectedVerts[g_mesh.faces[faceIdx+1]], 
+                                       cachedProjectedVerts[g_mesh.faces[faceIdx+2]]);
+                    }
+                }
+                auto t_pre_end = std::chrono::high_resolution_clock::now();
+                t_prepass += get_ms(t_pre_start, t_pre_end);
 
-                #pragma omp parallel for schedule(dynamic) reduction(+:batchFragments)
-                for(int k=0; k < (int)colorPassTasks.size(); ++k) {
-                    const auto& node = g_mesh.bvhNodes[colorPassTasks[k]];
+                // B. Build HZB
+                auto t_hzb_s = std::chrono::high_resolution_clock::now();
+                buildHZB();
+                auto t_hzb_e = std::chrono::high_resolution_clock::now();
+                t_hzb += get_ms(t_hzb_s, t_hzb_e);
+
+                // C. Color Pass (BVH + HZB Culling)
+                auto t_r_start = std::chrono::high_resolution_clock::now();
+                auto t_cull_start = std::chrono::high_resolution_clock::now();
+                std::vector<int> colorPassTasks; colorPassTasks.reserve(2048);
+                if (!g_mesh.bvhNodes.empty()) nodeStack.push_back(0);
+                while(!nodeStack.empty()) {
+                    int nodeId = nodeStack.back(); nodeStack.pop_back();
+                    const auto& node = g_mesh.bvhNodes[nodeId];
+                    float minX, maxX, minY, maxY, minZ;
+                    // 1. Frustum Cull
+                    if (!checkFrustum(currMvp, node, minX, maxX, minY, maxY, minZ)) continue;
+                    // 2. HZB Node Cull
+                    if (queryHZB((int)std::max(0.0f, minX), (int)std::min((float)WIDTH-1, maxX), 
+                                 (int)std::max(0.0f, minY), (int)std::min((float)HEIGHT-1, maxY), minZ)) {
+                        continue; 
+                    }
+                    if (node.isLeaf()) { colorPassTasks.push_back(nodeId); }
+                    else { 
+                        float dLeft = getNodeDepth(currMvp, node.left); float dRight = getNodeDepth(currMvp, node.right);
+                        if (dLeft > dRight) { if(node.left != -1) nodeStack.push_back(node.left); if(node.right != -1) nodeStack.push_back(node.right); }
+                        else { if(node.right != -1) nodeStack.push_back(node.right); if(node.left != -1) nodeStack.push_back(node.left); }
+                    }
+                }
+                auto t_cull_end = std::chrono::high_resolution_clock::now();
+                t_cull += get_ms(t_cull_start, t_cull_end);
+
+                // Serial Color Rasterization
+                for(int nodeId : colorPassTasks) {
+                    const auto& node = g_mesh.bvhNodes[nodeId];
                     for (int i = 0; i < node.triCount; i++) {
                         int faceIdx = (node.triStart + i) * 3;
                         int i0 = g_mesh.faces[faceIdx]; int i1 = g_mesh.faces[faceIdx+1]; int i2 = g_mesh.faces[faceIdx+2];
-                        transformVertex(currMvp, i0); transformVertex(currMvp, i1); transformVertex(currMvp, i2);
                         Vec3 p0 = cachedProjectedVerts[i0]; Vec3 p1 = cachedProjectedVerts[i1]; Vec3 p2 = cachedProjectedVerts[i2];
                         if (p0.z < 0 || p0.z > 1 || p1.z < 0 || p1.z > 1 || p2.z < 0 || p2.z > 1) continue;
+                        
+                        // Optional: Tri-Level Cull inside leaf
                         float sx0 = (p0.x + 1.0f) * 0.5f * WIDTH;  float sy0 = (1.0f - p0.y) * 0.5f * HEIGHT;
                         float sx1 = (p1.x + 1.0f) * 0.5f * WIDTH;  float sy1 = (1.0f - p1.y) * 0.5f * HEIGHT;
                         float sx2 = (p2.x + 1.0f) * 0.5f * WIDTH;  float sy2 = (1.0f - p2.y) * 0.5f * HEIGHT;
-                        int minX_t = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX_t = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
-                        int minY_t = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY_t = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
-                        
-                        if (g_renderMode == 4) {
-                            float triMinZ = std::min({p0.z, p1.z, p2.z});
-                            if (minX_t <= maxX_t && minY_t <= maxY_t) {
-                                if (queryHZB(minX_t, maxX_t, minY_t, maxY_t, triMinZ)) continue;
-                            }
-                        }
+                        int minX = std::max(0, (int)std::min({sx0, sx1, sx2})); int maxX = std::min((int)WIDTH - 1, (int)std::max({sx0, sx1, sx2}));
+                        int minY = std::max(0, (int)std::min({sy0, sy1, sy2})); int maxY = std::min((int)HEIGHT - 1, (int)std::max({sy0, sy1, sy2}));
+                        float minZ = std::min({p0.z, p1.z, p2.z});
+                        if (queryHZB(minX, maxX, minY, maxY, minZ)) continue;
 
-                        Vec3 v0 = g_mesh.vertices[i0]; Vec3 v1 = g_mesh.vertices[i1]; Vec3 v2 = g_mesh.vertices[i2];
-                        Vec3 rawNormal = (v1 - v0).cross(v2 - v0).normalize(); Vec3 rotNormal = matRot.transformPoint(rawNormal); 
+                        Vec3 v0_w = g_mesh.vertices[i0]; Vec3 v1_w = g_mesh.vertices[i1]; Vec3 v2_w = g_mesh.vertices[i2];
+                        Vec3 rawNormal = (v1_w - v0_w).cross(v2_w - v0_w).normalize(); Vec3 rotNormal = matRot.transformPoint(rawNormal); 
                         Vec3 litColor = simple_shading(rotNormal);
                         uint8_t r = (uint8_t)std::clamp(litColor.x * 255.0f, 0.0f, 255.0f);
                         uint8_t g = (uint8_t)std::clamp(litColor.y * 255.0f, 0.0f, 255.0f);
                         uint8_t b = (uint8_t)std::clamp(litColor.z * 255.0f, 0.0f, 255.0f);
-
-                        // [统计]
-                        uint64_t localFragCount = 0;
-
-                        for (int y = minY_t; y <= maxY_t; y++) {
-                            for (int x = minX_t; x <= maxX_t; x++) {
-                                Vec3 P = {(float)x, (float)y, 0}; Vec3 bc = barycentric(P, {sx0, sy0, 0}, {sx1, sy1, 0}, {sx2, sy2, 0});
-                                if (bc.x >= 0 && bc.y >= 0 && bc.z >= 0) {
-                                    // [统计]
-                                    localFragCount++;
-
-                                    float z = bc.x * p0.z + bc.y * p1.z + bc.z * p2.z; int idx = y * WIDTH + x;
-                                    if (z <= zBuffer[idx] + 0.00002f) { 
-                                        int pIdx = idx * 4; pixels[pIdx + 0] = r; pixels[pIdx + 1] = g; pixels[pIdx + 2] = b; pixels[pIdx + 3] = 255; 
-                                    }
-                                }
-                            }
-                        }
-                        batchFragments += localFragCount;
+                        Vec3 v0_scr; v0_scr.x=sx0; v0_scr.y=sy0; v0_scr.z=p0.z;
+                        Vec3 v1_scr; v1_scr.x=sx1; v1_scr.y=sy1; v1_scr.z=p1.z;
+                        Vec3 v2_scr; v2_scr.x=sx2; v2_scr.y=sy2; v2_scr.z=p2.z;
+                        g_num_fragments += scanlineRasterizeTri(v0_scr, v1_scr, v2_scr, r, g, b);
                     }
                 }
-                g_num_fragments += batchFragments;
-            } 
+                auto t_r_end = std::chrono::high_resolution_clock::now();
+                t_raster += get_ms(t_r_start, t_r_end);
+            }
+        } // End Instances loop
+
+        auto t_end_total = std::chrono::high_resolution_clock::now();
+        double t_total = get_ms(t_start_total, t_end_total);
+
+        // UI & Console Output
+        static int printCounter = 0;
+        printCounter++;
+        if (printCounter >= 60) {
+            printCounter = 0;
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "[Profile Mode " << g_renderMode << "] "
+                      << "Clear: " << t_clear << "ms | "
+                      << "Vertex: " << t_vertex << "ms | "
+                      << "PrePass: " << t_prepass << "ms | "
+                      << "HZB: " << t_hzb << "ms | "
+                      << "Cull: " << t_cull << "ms | "
+                      << "Raster: " << t_raster << "ms | "
+                      << "Total: " << t_total << "ms" << std::endl;
+        } 
+        if (benchmarkMode && benchmarkFrameCount % 100 == 0) {
+             std::cerr << std::fixed << std::setprecision(2); 
+             std::cerr << "[Bench " << benchmarkFrameCount << " Mode " << g_renderMode << "] "
+                      << "Total: " << t_total << "ms" << std::endl;
         }
 
         if (benchmarkMode) {
-            // [修改] 输出片元计数
             float frameMs = deltaTime * 1000.0f;
             std::cout << "BENCH_DATA," << benchmarkFrameCount << "," << frameMs << "," << g_num_fragments.load() << std::endl;
             
@@ -1046,8 +1027,8 @@ private:
                 glfwSetWindowShouldClose(window, true);
             }
         }
-
-        // --- UI ---
+        
+        // --- UI Draw ---
         float currentFPS = 0.0f;
         if (deltaTime > 0.0f) currentFPS = 1.0f / deltaTime;
         int fpsInt = (int)currentFPS;
@@ -1417,7 +1398,7 @@ int main(int argc, char **argv)
         }
         try {
             int val = std::stoi(arg);
-            if (!modeSet && val >= 1 && val <= 4) { mode = val; modeSet = true; } 
+            if (!modeSet && val >= 1 && val <= 5) { mode = val; modeSet = true; } 
             else { scenario = val; }
         } catch (...) {}
     }
