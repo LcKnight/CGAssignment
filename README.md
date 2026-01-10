@@ -36,9 +36,15 @@ cmake --build --preset windows-mingw-release
 #scenario 0是默认场景 其他scenario更多是没有大型obj所强行通过排列补充遮挡情况，容易卡
 #yes no是是否是benchmark环境 no为漫游 默认为no yes为benchmark环境 不可漫游 默认跑1200帧
 #左上显示帧数 红点表示mode 几个红点表示mode几
+#msvc
 .\build\windows-msvc-release\VulkanApp.exe .\assets\cubes.obj 1 0 no
+.\build\windows-msvc-release\VulkanApp.exe .\assets\house_t.obj 4 0 yes
+
+#gcc
+.\build\windows-mingw-release\VulkanApp.exe .\assets\cubes.obj 1 0 no
+.\build\windows-mingw-release\VulkanApp.exe .\assets\house_t.obj 4 0 yes
 #获得benchmark_report文件内容如下操作
-#需要python环境存在matplotlib
+#需要python环境存在matplotlib 用来绘制图像
 #控制台会输出每一段的耗时计算 默认测试 scenario0
 python benchmark.py
 #下面容易炸 不同scenario，这里我的排列设计的不是很好 效果一般
