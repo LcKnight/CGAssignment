@@ -35,6 +35,7 @@ cmake --build --preset windows-mingw-release
 #mode 1zbuffer 2 scanline zbuffer 3 hzb without bvh 4 full hzb
 #scenario 0是默认场景 其他scenario更多是没有大型obj所强行通过排列补充遮挡情况，容易卡
 #yes no是是否是benchmark环境 no为漫游 默认为no yes为benchmark环境 不可漫游 默认跑1200帧
+#左上显示帧数 红点表示mode 几个红点表示mode几
 .\build\windows-msvc-release\VulkanApp.exe .\assets\cubes.obj 1 0 no
 #获得benchmark_report文件内容如下操作
 #需要python环境存在matplotlib
@@ -197,14 +198,16 @@ HZB 是一种 保守剔除 算法。它依赖于 Z-Buffer 中已经存在的深�
 
 
 以下为scenario 0 即默认排列的情况
-![C:\Users\lcknight\Desktop\CG\CGAssignment\benchmark_report\cubes.obj_fps.png](file:///c%3A/Users/lcknight/Desktop/CG/CGAssignment/benchmark_report/cubes.obj_fps.png)
-![C:\Users\lcknight\Desktop\CG\CGAssignment\benchmark_report\teapot.obj_fps.png](file:///c%3A/Users/lcknight/Desktop/CG/CGAssignment/benchmark_report/teapot.obj_fps.png)
-![C:\Users\lcknight\Desktop\CG\CGAssignment\benchmark_report\house_t.obj_fps.png](file:///c%3A/Users/lcknight/Desktop/CG/CGAssignment/benchmark_report/house_t.obj_fps.png)![C:\Users\lcknight\Desktop\CG\CGAssignment\benchmark_report\hut_t.obj_fps.png](file:///c%3A/Users/lcknight/Desktop/CG/CGAssignment/benchmark_report/hut_t.obj_fps.png)
-![C:\Users\lcknight\Desktop\CG\CGAssignment\benchmark_report\city.obj_fps.png](file:///c%3A/Users/lcknight/Desktop/CG/CGAssignment/benchmark_report/city.obj_fps.png)
+![alt text](benchmark_report/cubes.obj_fps.png)
+![alt text](benchmark_report/teapot.obj_fps.png)
+![alt text](benchmark_report/house_t.obj_fps.png)
+![alt text](benchmark_report/hut_t.obj_fps.png)
+![alt text](benchmark_report/city.obj_fps.png)
 
 
-scenario 3 mode 2 house_t.obj 仅作展示情况
-![[Pasted image 20260110174718.png]]
+
+scenario 3 mode 1 house_t.obj 仅作展示情况
+![alt text](benchmark_report/scenario3.png)
 ```bash
 (cv) C:\Users\lcknight\Desktop\CG\CGAssignment>python benchmark.py
 Target Executable: C:\Users\lcknight\Desktop\CG\CGAssignment\build\windows-msvc-release\VulkanApp.exe
