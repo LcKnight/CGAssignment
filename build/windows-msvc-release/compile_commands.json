@@ -1,0 +1,56 @@
+[
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\CoreLib.dir\\src\\scene\\bvh.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\scene\\bvh.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\scene\\bvh.cpp",
+  "output": "CMakeFiles\\CoreLib.dir\\src\\scene\\bvh.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\CoreLib.dir\\src\\scene\\loader.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\scene\\loader.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\scene\\loader.cpp",
+  "output": "CMakeFiles\\CoreLib.dir\\src\\scene\\loader.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\CoreLib.dir\\src\\sampling\\brdf.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\sampling\\brdf.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\sampling\\brdf.cpp",
+  "output": "CMakeFiles\\CoreLib.dir\\src\\sampling\\brdf.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\CoreLib.dir\\src\\sampling\\light.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\sampling\\light.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\sampling\\light.cpp",
+  "output": "CMakeFiles\\CoreLib.dir\\src\\sampling\\light.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\CoreLib.dir\\src\\output\\tonemap.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\output\\tonemap.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\output\\tonemap.cpp",
+  "output": "CMakeFiles\\CoreLib.dir\\src\\output\\tonemap.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\PathTracer.dir\\src\\pt_main.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\pt_main.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\pt_main.cpp",
+  "output": "CMakeFiles\\PathTracer.dir\\src\\pt_main.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\PathTracer.dir\\src\\integrator\\pathtracer.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\integrator\\pathtracer.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\integrator\\pathtracer.cpp",
+  "output": "CMakeFiles\\PathTracer.dir\\src\\integrator\\pathtracer.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb -external:IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\Vulkan\\Include -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\VulkanApp.dir\\src\\vk_main.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\vk_main.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\vk_main.cpp",
+  "output": "CMakeFiles\\VulkanApp.dir\\src\\vk_main.cpp.obj"
+},
+{
+  "directory": "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+  "command": "C:\\PROGRA~2\\MICROS~2\\2022\\BUILDT~1\\VC\\Tools\\MSVC\\1444~1.352\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\GLFW\\include -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\tinyobjloader -IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\stb -external:IC:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\ThirdParty\\Vulkan\\Include -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++17 -openmp /FoCMakeFiles\\VulkanApp.dir\\src\\vulkan\\app.cpp.obj /FdTARGET_COMPILE_PDB /FS -c C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\vulkan\\app.cpp",
+  "file": "C:\\Users\\jzh1199\\Desktop\\PathTracer\\CGAssignment1\\src\\vulkan\\app.cpp",
+  "output": "CMakeFiles\\VulkanApp.dir\\src\\vulkan\\app.cpp.obj"
+}
+]

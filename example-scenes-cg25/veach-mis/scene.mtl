@@ -1,0 +1,40 @@
+newmtl Smooth
+Kd 0.0 0.0 0.0
+Ks 0.3 0.3 0.3
+Ns 10000.0
+
+newmtl Glossy
+Kd 0.0 0.0 0.0
+Ks 0.3 0.3 0.3
+Ns 798.0
+
+newmtl Rough
+Kd 0.0 0.0 0.0
+Ks 0.3 0.3 0.3
+Ns 198.0
+
+newmtl SuperRough
+Kd 0.0 0.0 0.0
+Ks 0.3 0.3 0.3
+Ns 30.0
+
+newmtl Diffuse
+Kd 0.5 0.5 0.5
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Light1
+Kd 0 0 0
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Light2
+Kd 0 0 0
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Light3
+Kd 0 0 0
+Ks 0.0 0.0 0.0
+Ns 10.0
+

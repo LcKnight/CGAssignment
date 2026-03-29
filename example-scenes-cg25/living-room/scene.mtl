@@ -1,0 +1,103 @@
+newmtl Paneling
+Kd 0.4800 0.4800 0.4800
+Ks 0.2 0.2 0.2
+Ns 4
+
+newmtl Transluscent
+Kd 0.9 0.9 0.9
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl MattePaint
+Kd 0.578596 0.578596 0.578596
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl BrushedStainlessSteel
+Kd 0.0 0.0 0.0
+Ks 0.578596 0.578596 0.578596
+Ns 40
+
+newmtl PlantPot
+Kd 0.1 0.1 0.1
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Dirt
+Kd 0.098504 0.045968 0.035887
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Branches
+Kd 0.160444 0.0824142 0.0199178
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Leaves
+Ks 0.0 0.0 0.0
+Ns 10.0
+map_Kd textures/leaf.png
+map_d textures/leaf_mask.png
+
+newmtl Walls
+Kd 0.1 0.1 0.1
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl FireplaceGlass
+Kd 0.0060 0.0060 0.0060
+Ks 0.2 0.2 0.2
+Ns 10000.0
+
+newmtl Mirror
+Kd 0.0 0.0 0.0
+Ks 1.0 1.0 1.0
+Ns 100000
+
+newmtl Floor
+Ks 0.2 0.2 0.2
+Ns 86.89
+map_Kd textures/wood.jpg
+
+newmtl Sofa
+Kd 1 1 1
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl SofaLegs
+Kd 0.1 0.1 0.1
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Painting
+Ks 0.0 0.0 0.0
+Ns 10.0
+map_Kd textures/picture8.jpg
+
+newmtl PaintingBack
+Kd 0.26 0.25 0.14
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl TableWood
+Ks 0.2 0.2 0.2
+Ns 798.0
+map_Kd textures/wood5.jpg
+
+newmtl Glass
+Kd 0.0 0.0 0.0
+Ks 1.0 1.0 1.0
+Ns 100000.0
+Tr 0.9
+Ni 1.5
+
+newmtl BottleCap
+Kd 0.456263 0 0
+Ks 0.0 0.0 0.0
+Ns 10.0
+
+newmtl Light1
+Kd 0.0 0.0 0.0
+Ks 0.0 0.0 0.0
+Ns 10.0
+

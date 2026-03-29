@@ -1,0 +1,6 @@
+<camera type="perspective" width="1280" height="720" fovx="90.00">
+  <eye x="5.105180" y="0.731065" z="-2.317890"/>
+  <lookat x="4.143388" y="0.805472" z="-2.054414"/>
+  <up x="0.071763" y="0.997228" z="-0.019659"/>
+</camera>
+<light mtlname="Light1" radiance="10, 8, 5"/>

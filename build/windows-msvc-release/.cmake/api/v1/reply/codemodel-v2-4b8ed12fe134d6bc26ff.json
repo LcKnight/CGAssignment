@@ -1,0 +1,105 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Release-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5
+					]
+				}
+			],
+			"name" : "Release",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "VulkanHZB",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "Compile_frag.spv::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Compile_frag.spv-Release-0ab65866e7097d91b020.json",
+					"name" : "Compile_frag.spv",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Compile_vert.spv::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Compile_vert.spv-Release-232829d8e30c2105ca08.json",
+					"name" : "Compile_vert.spv",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "CoreLib::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-CoreLib-Release-68ece5ac72ce0f5d6c85.json",
+					"name" : "CoreLib",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "PathTracer::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-PathTracer-Release-2eca3e06f6a195a3285f.json",
+					"name" : "PathTracer",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Shaders::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Shaders-Release-fa7629bbd075607ebd8e.json",
+					"name" : "Shaders",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "VulkanApp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-VulkanApp-Release-987e5a42fbaa2d59fd7a.json",
+					"name" : "VulkanApp",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release",
+		"source" : "C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 6
+	}
+}

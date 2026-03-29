@@ -1,4 +1,460 @@
 
+
+# 蒙特卡洛光线追踪项目报告
+## 一、开发环境与库依赖
+
+本部分是当前项目中 Monte Carlo Path Tracer 的技术报告，内容主要在于路径追踪，而不是 Vulkan 实时光栅化。
+
+- **操作系统**: Windows 10 / 11 64-bit
+- **编程语言**: C++ (ISO C++17 Standard)
+- **构建系统**: CMake
+- **核心程序**: `PathTracer.exe`
+- **并行加速**: OpenMP
+- **CPU性能** :AMD 9700X
+- **第三方库**:
+  - **tinyobjloader**: 加载 `OBJ/MTL`
+  - **stb_image**: 读取纹理
+  - **stb_image_write**: 输出 PNG
+  - **GLFW / Vulkan SDK**: 仍在仓库中，但主要服务于 `VulkanApp`，不是 PathTracer 主渲染链路的核心依赖
+
+本项目实际是一个“双渲染器”仓库：
+
+1. `PathTracer.exe`: 离线路径追踪，负责全局光照、阴影、反射、折射、Monte Carlo 采样。
+2. `VulkanApp.exe`: 软光栅化 + HZB 的实时实验程序。
+
+当前这份报告只讨论 `PathTracer`。
+
+**项目部署：**
+
+```bash
+1.编译
+# MSVC
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release --parallel
+
+# MinGW
+cmake --preset windows-mingw-release
+cmake --build --preset windows-mingw-release --parallel
+
+2.运行 PathTracer
+# Usage: PathTracer <scene_dir> [spp] [--set PT_KEY=VALUE] [--unset PT_KEY]
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\living-room 16
+
+# 输出线性 HDR 结果
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\living-room 64 --set PT_WRITE_LINEAR=1
+
+3.批量测试
+python tools\batch_render_scenes.py ".\build\windows-msvc-release\PathTracer.exe" 
+```
+
+### 用户操作
+
+`PathTracer.exe` 是离线渲染程序，没有实时交互窗口；用户主要通过命令行参数与环境变量控制渲染行为。
+
+常用控制方式：
+
+- **场景选择**: 传入场景目录，例如 `example-scenes-cg25\cornell-box`
+- **采样率**: 第二个参数 `spp` 控制每像素采样数
+- **调试开关**: 用 `--set PT_XXX=...` 控制 NEE、环境光、像素级 trace 等行为
+- **输出格式**: 默认输出 `PPM + PNG`，可通过 `PT_WRITE_LINEAR=1` 额外输出 `PFM`
+
+例如：
+
+```bash
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\sponza 16 --set PT_DEBUG_PIXEL=640,360
+```
+## 二、渲染测试数据
+
+
+### cornell-box_256
+![cornell-box_256](./rayTracing_report/cornell-box_256.png "cornell-box_256")
+
+### living-room_128
+![living-room_128](./rayTracing_report/living-room_128.png "living-room_128")
+
+### sponza_128
+![sponza_256](./rayTracing_report/sponza_128.png "sponza_128")
+
+### veach-mis_128
+![veach-mis_128](./rayTracing_report/veach-mis_128.png "veach-mis_128")
+
+
+### 场景基础信息
+| 场景 | 三角形数 | 材质数 | BVH 节点数 | 发光三角形数 | 光源总面积 | 分辨率 | 备注 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| `cornell-box` | 26,678 | 7 | 18,809 | 2 | 0.1786 | 1024x1024 | OBJ normal warning |
+| `living-room` | 143,175 | 20 | 97,209 | 12 | 24 | 1280x720 | 检测到 enclosing emissive shell，自动缩放 0.01 |
+| `sponza` | 262,267 | 25 | 176,087 | 2 | 100 | 1280x720 | 无 `scene.xml`，fallback camera/environment，自动缩放 0.01，添加 procedural softbox |
+| `veach-mis` | 2,218 | 8 | 1,501 | 2,166 | 15.5433 | 1280x720 | OBJ normal warning |
+### 不同采样率下的耗时
+| 场景 | 1 spp | 2 spp | 8 spp | 16 spp | 32 spp | 64 spp | 128 spp | 256 spp |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `cornell-box` | 16.36s | 32.83s | 129.60s | 254.11s | 510.19s | 1011.40s | 2017.69s | 4038.11s |
+| `living-room` | 19.41s | 36.54s | 145.23s | 286.90s | 571.13s | 1140.89s | 2287.87s | 进行中 |
+| `sponza` | 26.08s | 50.70s | 199.57s | 402.19s | 803.86s | 1616.79s | 3210.07s | 进行中|
+| `veach-mis` | 7.95s | 15.55s | 61.12s | 123.44s | 245.89s | 490.34s | 976.74s | 进行中|
+(稍微未跑完，跑完我会更新)
+
+
+
+## 三、算法实现与模块设计
+
+本项目实现的是一个以三角形网格场景为输入的 CPU 路径追踪器，核心流程是：
+
+1. 加载场景几何、材质、纹理、相机与光源
+2. 构建 BVH 加速结构
+3. 对每个像素发射多条相机光线
+4. 在路径追踪主循环中进行求交、直接光采样、BRDF 采样与路径延拓
+5. 经曝光、色调映射和 sRGB 变换后输出图像
+
+### 1. 代码模块划分
+
+| **模块** | **主要文件** | **职责** |
+| --- | --- | --- |
+| **Math** | `src/math/vec.h`, `src/math/ray.h` | 向量、矩阵、光线与常量 |
+| **Scene** | `src/scene/mesh.h`, `src/scene/loader.cpp`, `src/scene/bvh.cpp` | 场景对象建模、OBJ/MTL/XML 加载、BVH 构建与遍历 |
+| **Sampling** | `src/sampling/rng.h`, `src/sampling/brdf.cpp`, `src/sampling/light.cpp` | 随机采样、BRDF、相机发射、直接光采样 |
+| **Integrator** | `src/integrator/pathtracer.cpp` | 路径追踪主循环 |
+| **Output** | `src/output/tonemap.cpp` | 曝光、tonemap、PNG/PPM/PFM 输出 |
+| **Main** | `src/pt_main.cpp` | 并行调度、进度统计、命令行参数处理 |
+
+### 2. 核心数据结构
+
+1. **`Vec3` / `Ray`**
+
+   - `Vec3` 在本项目里同时承担几何向量与颜色/辐射值表达。
+   - `Ray` 非常轻量，仅包含 `origin + direction` 与 `at(t)`。
+
+2. **`Material` / `Texture` / `Triangle` / `HitRecord`**
+
+   - `Material` 包含 `Kd/Ks/Ns/Tr/Ni/emission` 以及纹理索引。
+   - `Texture` 支持颜色采样与 alpha-mask 采样。
+   - `Triangle` 是路径追踪最小几何单元。
+   - `HitRecord` 保存命中距离、位置、着色法线、几何法线、UV、材质编号。
+
+3. **`Scene` / `SceneFull`**
+
+   - `Scene` 聚合材质、纹理、三角形与光源采样辅助数据。
+   - `SceneFull` 继承 `Scene`，并按值拥有 `BVH bvh`。
+   - 当前真实运行链路以 `SceneFull::bvh` 为准。
+
+4. **`BVH` / `AABB`**
+
+   - `AABB::hit(...)` 用 slab 法做光线与包围盒求交。
+   - `BVH::buildRec(...)` 根据最长轴 + 中点划分递归构建。
+   - `traverseClosest(...)` 与 `traverseShadow(...)` 分别服务于最近命中与遮挡判断。
+
+### 3. 场景加载设计
+
+场景加载入口位于 `src/scene/loader.cpp`，其工作顺序为：
+
+1. 尝试解析 `scene.xml` 获取相机与区域光信息
+2. 加载 `scene.obj`，若不存在则回退到 `<folder>.obj`
+3. 构建材质、纹理和三角形数据
+4. 对法线、透明贴图、特殊材质做兼容处理
+5. 对数据集场景执行 fallback 相机与环境设置
+6. 自动缩放场景尺度
+7. 构建 BVH
+8. 建立光源索引与 CDF
+
+这种装配方式的优点是：所有渲染依赖在 `loadScene(...)` 结束后都已经就绪，后续积分器不再关心资源初始化细节。
+
+### 4. 材质与 BRDF 模型
+
+当前路径追踪器采用的是较为朴素但工程上稳定的材质模型：
+
+- **Diffuse**: Lambert
+- **Specular Glossy**: Phong lobe
+- **Mirror**: 通过 `isMirror()` 判定，走解析反射分支
+- **Glass**: 通过 `isGlass()` 判定，走折射/反射分支
+- **Emissive**: 通过 `emission` 控制发光面
+
+`src/sampling/brdf.cpp` 中的三个函数构成同一套概率模型：
+
+1. `evalBRDF(...)`
+2. `pdfBRDF(...)`
+3. `sampleBRDF(...)`
+
+三者一致是 Monte Carlo 正确性的基础，否则会造成偏差、噪点异常或亮度错误。
+
+### 5. 路径追踪主循环
+
+主循环位于 `src/integrator/pathtracer.cpp` 的 `pathTrace(...)`。
+
+每一跳的主要步骤是：
+
+1. 用 `sc.bvh.intersect(...)` 求最近命中
+2. miss 时累积环境光
+3. hit emissive 时累积面光贡献
+4. 对非镜面/玻璃材质执行：
+   - 直接光采样 `sampleDirectLight(...)`
+   - 环境直接采样 `sampleDirectEnvironment(...)`
+   - BRDF 采样生成下一跳
+5. 使用 Russian Roulette 在较深路径处做概率终止
+
+路径吞吐量更新形式为：
+
+```cpp
+throughput = throughput * brdf * cosT / (pdf * pCont);
+```
+
+它对应的是标准路径积分估计器中的 `f * cos / pdf` 结构，并乘以 RR 存活概率修正。
+
+### 6. 直接光采样与 MIS
+
+`src/sampling/light.cpp` 中实现了两种直接光估计：
+
+- `sampleDirectLight(...)`: 对面积光源采样
+- `sampleDirectEnvironment(...)`: 对环境光采样
+
+二者都结合 BRDF PDF 使用 MIS 的 power heuristic 融合。其作用是：
+
+1. 降低纯路径追踪在小光源下的高方差问题
+2. 减少“打不中光源只能靠碰运气”的低效率采样方式
+3. 让面积光与环境光都能通过统一的估计框架参与贡献
+
+### 7. 输出链路
+
+`src/output/tonemap.cpp` 提供完整输出链：
+
+1. `computeExposure(...)`: 自动曝光，也可由 `PT_EXPOSURE` 强制指定
+2. `tonemap(...)`: 采用 ACES 风格曲线把 HDR 压缩到显示范围
+3. `toSRGB(...)`: 线性空间转 sRGB
+4. `writePPM(...)` / `writePNG(...)` / `writePFM(...)`: 输出文件
+
+因此图像亮暗不完全由光照强弱决定，还会受曝光统计与色调映射影响。
+
+## 四、实现细节与取舍
+
+### 1. BVH 的必要性与并行策略
+
+对于几十万三角形以上场景，若每次反弹都线性遍历全部三角形，成本无法接受。因此项目中必须使用 BVH。
+
+当前 BVH 的特点：
+
+- 构建策略简单稳定：最长轴 + 中点划分
+- 遍历接口区分为最近命中与阴影遮挡两种路径
+- 在 `src/scene/bvh.cpp` 中仅对浅层大子树启用 OpenMP task
+
+这种并行策略不是最激进的，但优点是风险低、容易维护，并且避免了过度并行带来的调度开销。
+
+### 2. 像素并行而不是路径内部并行
+
+`src/pt_main.cpp` 采用：
+
+- OpenMP `collapse(2)` 对二维像素循环并行
+- 每像素独立 RNG
+- 原子统计进度
+
+这种设计的原因是：
+
+1. 像素之间天然独立
+2. 避免共享状态带来的锁与数据竞争
+3. 比“路径内部细粒度并行”更容易验证正确性
+
+### 3. 数据集兼容不是只支持课程格式
+
+最初课程场景更偏向 `scene.xml + scene.obj` 固定结构，但当前 `loader.cpp` 已兼容：
+
+- `<folder>.obj` 命名方式
+- 缺少 `scene.xml` 的数据集目录
+- 自动相机与环境回退
+- Sponza 等场景的特殊比例与补丁光源处理
+
+这使得 `cornell-box`、`living-room`、`veach-mis`、`sponza` 等目录都能通过统一入口运行。
+
+### 4. 调试开关的工程意义
+
+项目中大量使用环境变量控制行为，例如：
+
+- `PT_DISABLE_NEE`
+- `PT_ONLY_NEE`
+- `PT_ONLY_EMISSIVE_HIT`
+- `PT_DEBUG_PIXEL`
+- `PT_DEBUG_MAX_SAMPLES`
+- `PT_DEBUG_MAX_BOUNCES`
+- `PT_EXPOSURE`
+- `PT_TARGET_GRAY`
+- `PT_WRITE_LINEAR`
+
+这些参数的作用不是光线追踪的本体功能，而是把路径贡献拆开做受控实验，便于定位白斑、黑块、过曝、漏光、误判 miss 等问题。
+
+## 五、Bug分析与Debug记录
+
+### 1. BVH AABB 边界命中问题
+
+项目中曾出现 interior 场景局部白斑问题，根因是 AABB slab 求交在边界接触时过于严格，导致部分原本应命中的光线被错误判定为 miss，随后直接落到环境光分支，形成不合理的亮斑。(核心是在src/scene/bvh.h 的 AABB::hit(...) 里，原来是 <=，现在改成 <
+if(tmax < tmin) return false;)
+
+这个问题的修复点在 `src/scene/bvh.h`，本质是避免把边界接触情况错误排除。
+
+### 2. Cornell 右墙黑块与法线/偏移问题
+
+在 Cornell 场景中，黑块问题不是单一参数可修复的，而是由以下因素共同造成：
+
+- 脏法线或低质量法线输入(课程给的数据法线有问题)
+- 法线与几何法线不一致导致半球采样异常
+- 阴影/散射射线偏移方向不稳，触发自遮挡
+
+工程处理方案是：
+
+1. 对低面数平面材质做更强的法线稳定
+2. 对高面数模型保留平滑法线，避免破坏外观
+3. 修正偏移与 front/back 法线方向逻辑
+
+### 3. Sponza 全黑问题
+
+Sponza 场景的一个关键问题来自 `loader.cpp` 对 MTL 透射参数的解释错误。
+
+Sponza 的很多普通材质虽然写有：
+
+```mtl
+d 1.0000
+Tr 0.0000
+Tf 1.0000 1.0000 1.0000
+```
+
+但这里的 `Tf` 是透射颜色，不代表“材质是玻璃”。如果简单把 `Tf` 平均值直接并入 `m.Tr`，就会把大量不透明表面错误识别成玻璃，导致路径大量走折射分支，直接光采样贡献显著减少，最终画面接近全黑。
+
+代码修正为：
+
+- 以 `d/Tr` 决定主要透射强度
+- 仅在 `Tf` 明显小于白色且 `Tr` 缺失时才作为 fallback
+
+这个修复直接恢复了 Sponza 的正常 diffuse/NEE 路径。
+
+## 六、场景支持与测试方式
+
+### 1. 当前可直接运行的示例场景
+
+当前仓库 `example-scenes-cg25` 下可以直接作为场景目录传给 `PathTracer.exe` 的典型目录包括：
+
+- `cornell-box`
+- `living-room`
+- `veach-mis`
+- `sponza`
+
+其中：
+
+- `cornell-box`、`living-room`、`veach-mis` 是课程场景
+- `sponza` 属于数据集式目录，需要依赖 loader 中的 fallback 逻辑
+
+### 2. 单场景测试
+
+```bash
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\cornell-box 16
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\living-room 64
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\sponza 16
+```
+
+### 3. 批量统一测试
+
+仓库中新增了 `tools\batch_render_scenes.py`，用于自动遍历场景目录并输出统一命名的结果图。
+
+默认行为：
+
+- 扫描 `example-scenes-cg25` 下所有子文件夹
+- 默认渲染 `16 64 128 spp`
+- 输出目录为 `rayTracing_report`
+- 命名规则为 `scene_spp.png`
+
+例如生成：
+
+- `living-room_16.png`
+- `living-room_64.png`
+- `sponza_128.png`
+
+使用方式：
+
+```bash
+python tools\batch_render_scenes.py ".\build\windows-msvc-release\PathTracer.exe"
+
+python tools\batch_render_scenes.py ".\build\windows-msvc-release\PathTracer.exe" --spp 1 2 8 16
+```
+
+## 七、代码阅读路线与模块关系
+
+如果从底层向上阅读，推荐顺序为：
+
+1. `src/math/vec.h`, `src/math/ray.h`
+2. `src/scene/mesh.h`
+3. `src/scene/bvh.h/.cpp`
+4. `src/scene/loader.cpp`
+5. `src/sampling/brdf.cpp`
+6. `src/sampling/light.cpp`
+7. `src/integrator/pathtracer.cpp`
+8. `src/output/tonemap.cpp`
+9. `src/pt_main.cpp`
+
+模块关系如下：
+
+```text
+math(vec/ray)
+  -> scene(mesh/loader/bvh)
+     -> sampling(rng/brdf/light)
+        -> integrator(pathtracer)
+           -> output(tonemap)
+              -> pt_main (PathTracer executable)
+```
+
+
+
+## 附：常用命令
+
+```bash
+# MSVC 构建
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release --parallel
+
+# 单场景渲染
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\living-room 16
+
+# 带像素调试
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\sponza 1 --set PT_DEBUG_PIXEL=640,360
+
+# 输出线性 PFM
+.\build\windows-msvc-release\PathTracer.exe .\example-scenes-cg25\living-room 64 --set PT_WRITE_LINEAR=1
+
+# 批量测试
+python tools\batch_render_scenes.py  ".\build\windows-msvc-release\PathTracer.exe"
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 软光栅化渲染器
+
 ## 一、 开发环境与库依赖
 
 本项目基于现代 C++ 标准开发，构建了一个完整的软光栅化渲染器，用于验证和对比不同的消隐算法。

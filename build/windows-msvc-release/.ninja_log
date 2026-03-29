@@ -1,0 +1,18 @@
+# ninja log v6
+2	23	7964768834251436	clean	f2391f28f5e4f8f8
+30	257	7964768838702348	frag.spv	dcda55503cebb66e
+30	257	7964768838702348	C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/frag.spv	dcda55503cebb66e
+24	273	7964768838872322	vert.spv	8d831da678b91438
+24	273	7964768838872322	C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/vert.spv	8d831da678b91438
+14	348	7964768836384145	CMakeFiles/CoreLib.dir/src/sampling/brdf.cpp.obj	bcdc61fa7d1d0ec6
+18	469	7964768836414138	CMakeFiles/CoreLib.dir/src/sampling/light.cpp.obj	eb7658c2ccb51f3d
+8	470	7964768836314134	CMakeFiles/CoreLib.dir/src/scene/bvh.cpp.obj	87b70c3f98eeaf27
+21	796	7964768836454136	CMakeFiles/CoreLib.dir/src/output/tonemap.cpp.obj	a1508685ebd3c322
+35	834	7964768836594134	CMakeFiles/PathTracer.dir/src/pt_main.cpp.obj	9c0cc5c95b8e1e
+274	987	7964768838982392	CMakeFiles/VulkanApp.dir/src/vk_main.cpp.obj	a3364a1d1a1b4f32
+40	998	7964768836634130	CMakeFiles/PathTracer.dir/src/integrator/pathtracer.cpp.obj	97c2832e8c3a465c
+277	2409	7964768839012392	CMakeFiles/VulkanApp.dir/src/vulkan/app.cpp.obj	86c4de3de77f1d3d
+11	2949	7964768836354135	CMakeFiles/CoreLib.dir/src/scene/loader.cpp.obj	67fed615892991da
+2949	3066	7964768865734119	CoreLib.lib	c9e0da49867add04
+3070	3259	7964768866950273	VulkanApp.exe	4b95757f5b637405
+3066	3262	7964768866900269	PathTracer.exe	95a04e53e316cb82

@@ -1,0 +1,8 @@
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/Compile_vert.spv.dir
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/Shaders.dir
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/Compile_frag.spv.dir
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/CoreLib.dir
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/PathTracer.dir
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/VulkanApp.dir
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/edit_cache.dir
+C:/Users/jzh1199/Desktop/PathTracer/CGAssignment1/build/windows-msvc-release/CMakeFiles/rebuild_cache.dir
